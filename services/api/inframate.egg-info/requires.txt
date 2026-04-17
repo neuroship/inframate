@@ -1,0 +1,8 @@
+fastapi[standard]>=0.115.0
+python-hcl2>=5.0
+openai>=1.50
+python-dotenv>=1.0
+aioboto3>=15.5.0
+pyyaml>=6.0
+rich>=15.0.0
+textual>=8.2.3

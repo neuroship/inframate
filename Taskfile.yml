@@ -1,0 +1,23 @@
+version: '3'
+
+tasks:
+  install:
+    desc: Build UI, install inframate globally
+    cmds:
+      - cd services/ui && npm install && npm run build
+      - uv tool install --reinstall ./services/api
+
+  dev:
+    desc: Run api:dev and ui:dev in separate terminals
+    cmds:
+      - echo "Run 'task api:dev' and 'task ui:dev' in separate terminals"
+
+  api:dev:
+    dir: services/api
+    cmds:
+      - uv run inframate --no-browser
+
+  ui:dev:
+    dir: services/ui
+    cmds:
+      - npm run dev

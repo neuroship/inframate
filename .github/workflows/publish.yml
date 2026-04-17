@@ -1,0 +1,114 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment: pypi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build UI
+        working-directory: services/ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Python package
+        working-directory: services/api
+        run: |
+          cp ../../README.md .
+          uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: services/api/dist/
+
+  update-homebrew:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: meta
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Get SHA from PyPI
+        id: pypi
+        run: |
+          VERSION=${{ steps.meta.outputs.version }}
+          for i in $(seq 1 30); do
+            RESPONSE=$(curl -sf "https://pypi.org/pypi/inframate/${VERSION}/json") && break
+            echo "Waiting for PyPI... (attempt $i)"
+            sleep 10
+          done
+          URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print([u['url'] for u in d['urls'] if u['packagetype']=='sdist'][0])")
+          SHA=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print([u['digests']['sha256'] for u in d['urls'] if u['packagetype']=='sdist'][0])")
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          repository: neuroship/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        env:
+          TARBALL_URL: ${{ steps.pypi.outputs.url }}
+          TARBALL_SHA: ${{ steps.pypi.outputs.sha256 }}
+        run: |
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/inframate.rb << 'ENDFORMULA'
+class Inframate < Formula
+  desc "CLI tool for managing Terraform infrastructure with a local web UI"
+  homepage "https://github.com/neuroship/inframate"
+  url "__URL__"
+  sha256 "__SHA__"
+  license "MIT"
+
+  depends_on "python@3.13"
+
+  def install
+    python = Formula["python@3.13"].opt_bin/"python3.13"
+    venv = libexec/"venv"
+    system python, "-m", "venv", venv
+    system venv/"bin/pip", "install", "."
+    bin.install_symlink venv/"bin/inframate"
+  end
+
+  test do
+    assert_match "inframate", shell_output("#{bin}/inframate --help")
+  end
+end
+ENDFORMULA
+          sed -i "s|__URL__|${TARBALL_URL}|; s|__SHA__|${TARBALL_SHA}|" homebrew-tap/Formula/inframate.rb
+
+      - name: Push to tap
+        working-directory: homebrew-tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/inframate.rb
+          git commit -m "inframate ${{ steps.meta.outputs.version }}"
+          git push
