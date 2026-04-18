@@ -325,7 +325,7 @@ async def get_costs(request: Request, days: int = 30):
 
     if "_error" in resource_costs:
         return {
-            "resources": rows,
+            "resources": list(rows),
             "service_costs": service_costs,
             "error": resource_costs["_error"],
         }

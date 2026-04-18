@@ -1094,41 +1094,35 @@
     <div class="flex items-center gap-2 px-4 py-1.5 border-b border-base-content/10 flex-wrap">
       {#each STATUS_FILTERS as sf}
         {@const count = sf.id === "all" ? stats.total : (stats.statuses[sf.id] || 0)}
-        {#if sf.id === "all" || count > 0}
-          <button
-            class="btn btn-xs {activeStatusFilter === sf.id ? 'btn-primary' : 'btn-soft'}"
-            style={activeStatusFilter === sf.id && sf.color ? `background:${sf.color};border-color:${sf.color};` : ""}
-            onclick={() => setStatusFilter(sf.id)}
-            title={sf.hint}
-          >
-            {#if sf.color}
-              <span class="w-1.5 h-1.5 rounded-full" style="background: {sf.color}"></span>
-            {/if}
-            {sf.label}
-            {count}
-          </button>
-        {/if}
+        <button
+          class="btn btn-xs {activeStatusFilter === sf.id ? 'btn-primary' : 'btn-soft'} {count === 0 && sf.id !== 'all' ? 'opacity-40' : ''}"
+          style={activeStatusFilter === sf.id && sf.color ? `background:${sf.color};border-color:${sf.color};` : ""}
+          onclick={() => setStatusFilter(sf.id)}
+          title={sf.hint}
+        >
+          {#if sf.color}
+            <span class="w-1.5 h-1.5 rounded-full" style="background: {sf.color}"></span>
+          {/if}
+          {sf.label}
+          {count}
+        </button>
       {/each}
 
-      {#if Object.keys(stats.actions || {}).length > 0}
-        <div class="w-px h-4 bg-base-content/10"></div>
-        {#each ACTION_FILTERS as af}
-          {@const count = af.id === "all" ? Object.values(stats.actions || {}).reduce((a, b) => a + b, 0) : (stats.actions?.[af.id] || 0)}
-          {#if af.id === "all" || count > 0}
-            <button
-              class="btn btn-xs {activeActionFilter === af.id ? 'btn-primary' : 'btn-soft'}"
-              style={activeActionFilter === af.id && af.color ? `background:${af.color};border-color:${af.color};` : ""}
-              onclick={() => setActionFilter(af.id)}
-            >
-              {#if af.color}
-                <span class="w-1.5 h-1.5 rounded-full" style="background: {af.color}"></span>
-              {/if}
-              {af.label}
-              {count}
-            </button>
+      <div class="w-px h-4 bg-base-content/10"></div>
+      {#each ACTION_FILTERS as af}
+        {@const count = af.id === "all" ? Object.values(stats.actions || {}).reduce((a, b) => a + b, 0) : (stats.actions?.[af.id] || 0)}
+        <button
+          class="btn btn-xs {activeActionFilter === af.id ? 'btn-primary' : 'btn-soft'} {count === 0 && af.id !== 'all' ? 'opacity-40' : ''}"
+          style={activeActionFilter === af.id && af.color ? `background:${af.color};border-color:${af.color};` : ""}
+          onclick={() => setActionFilter(af.id)}
+        >
+          {#if af.color}
+            <span class="w-1.5 h-1.5 rounded-full" style="background: {af.color}"></span>
           {/if}
-        {/each}
-      {/if}
+          {af.label}
+          {count}
+        </button>
+      {/each}
 
       {#if !cloudScanned && !cloudScanning}
         <span class="text-[10px] text-base-content/30 flex items-center gap-1">
