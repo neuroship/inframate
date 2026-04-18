@@ -62,12 +62,15 @@ def main():
             raise SystemExit(1)
 
     # Dispatch
-    if args.command == "serve":
-        from app.cli_commands.ui import run_ui
-        run_ui(project_dir, config.get_port(), args.no_browser)
-    else:
-        from app.cli_commands.resources import run_resources
-        run_resources(project_dir, status=args.status, service=args.service, json_output=args.json_output, no_cloud=args.no_cloud)
+    try:
+        if args.command == "serve":
+            from app.cli_commands.ui import run_ui
+            run_ui(project_dir, config.get_port(), args.no_browser)
+        else:
+            from app.cli_commands.resources import run_resources
+            run_resources(project_dir, status=args.status, service=args.service, json_output=args.json_output, no_cloud=args.no_cloud)
+    except KeyboardInterrupt:
+        print()
 
     print_update_notice(version_thread)
 

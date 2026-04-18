@@ -11,26 +11,37 @@ CACHE_FILE = ".inframate-plan-cache.json"
 
 
 def get_cached_plan(tf_path: str) -> dict | None:
-    """Return cached plan if available."""
+    """Return cached plan if still fresh (no .tf files changed since cache)."""
     entry = _cache.get(tf_path)
-    if entry:
-        return entry
+    if not entry:
+        cache_path = os.path.join(tf_path, CACHE_FILE)
+        if os.path.isfile(cache_path):
+            try:
+                with open(cache_path) as f:
+                    data = json.load(f)
+                entry = {
+                    "plan_data": data.get("plan_data", {}),
+                    "timestamp": data.get("timestamp", 0),
+                    "tf_path": tf_path,
+                }
+                _cache[tf_path] = entry
+            except Exception:
+                return None
+        else:
+            return None
 
-    cache_path = os.path.join(tf_path, CACHE_FILE)
-    if os.path.isfile(cache_path):
-        try:
-            with open(cache_path) as f:
-                data = json.load(f)
-            _cache[tf_path] = {
-                "plan_data": data.get("plan_data", {}),
-                "timestamp": data.get("timestamp", 0),
-                "tf_path": tf_path,
-            }
-            return _cache[tf_path]
-        except Exception:
-            pass
+    # Invalidate if any .tf file is newer than the cache
+    cache_ts = entry.get("timestamp", 0)
+    try:
+        for f in os.listdir(tf_path):
+            if f.endswith((".tf", ".tfvars")) and os.path.isfile(os.path.join(tf_path, f)):
+                if os.path.getmtime(os.path.join(tf_path, f)) > cache_ts:
+                    _cache.pop(tf_path, None)
+                    return None
+    except OSError:
+        pass
 
-    return None
+    return entry
 
 
 def save_cached_plan(tf_path: str, plan_data: dict) -> dict:

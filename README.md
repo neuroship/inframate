@@ -33,6 +33,18 @@ Running `inframate` in a Terraform project directory will:
 3. Open an interactive TUI for browsing, applying, and destroying resources
 4. If the plan fails and AI is configured, offer AI-assisted diagnosis and fixes
 
+### Resource statuses
+
+| Status | Meaning |
+|--------|---------|
+| **Managed** | In Terraform state and code, no pending changes |
+| **Pending** | In code but not yet applied (create/update/destroy/replace planned) |
+| **Drift** | Applied but actual cloud state differs from Terraform state |
+| **Unmanaged** | Exists in AWS but not in any Terraform configuration |
+| **Orphaned** | In Terraform state but the resource no longer exists in cloud |
+
+Each resource also shows three indicators: **S** (in state), **C** (in code), **W** (in cloud).
+
 ### TUI keybindings
 
 **Navigation & search**
@@ -66,10 +78,12 @@ Running `inframate` in a Terraform project directory will:
 
 | Key | Action |
 |-----|--------|
+| `Enter` | Show resource detail (attributes, changes, tags) |
 | `Space` | Toggle resource selection |
 | `r` | Apply (all planned changes, or selected only) |
 | `x` | Destroy selected resources |
 | `$` | Load and display AWS costs |
+| `F5` | Refresh (re-read terraform + cloud data) |
 | `q` | Quit |
 
 When apply or destroy fails, inframate streams AI diagnosis, suggests file changes and commands (e.g. `terraform import`, `terraform state rm`), and offers to apply fixes — in a loop until the issue is resolved.

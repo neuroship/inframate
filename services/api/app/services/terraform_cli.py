@@ -32,6 +32,7 @@ async def stream_terraform(
     process = await asyncio.create_subprocess_exec(
         *cmd_with_no_color,
         cwd=workspace_path,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env=_build_env(extra_env),
@@ -58,6 +59,7 @@ async def run_terraform(
     process = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=workspace_path,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env=_build_env(extra_env),
@@ -72,7 +74,7 @@ async def get_plan_json(
     extra_env: dict[str, str] | None = None,
 ) -> dict:
     plan_file = os.path.join(workspace_path, ".inframate-plan.tfplan")
-    args = ["plan", "-out", plan_file, "-no-color"]
+    args = ["plan", "-input=false", "-lock-timeout=30s", "-out", plan_file, "-no-color"]
     if var_file:
         args.extend(["-var-file", var_file])
 
@@ -100,26 +102,32 @@ async def stream_plan_with_output(
 ) -> dict:
     """Run terraform plan, call on_line(text) for each output line, return plan JSON."""
     plan_file = os.path.join(workspace_path, ".inframate-plan.tfplan")
-    cmd = [config.TERRAFORM_BINARY, "plan", "-out", plan_file, "-no-color"]
+    cmd = [config.TERRAFORM_BINARY, "plan", "-input=false", "-lock-timeout=30s", "-out", plan_file, "-no-color"]
     if var_file:
         cmd.extend(["-var-file", var_file])
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=workspace_path,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env=_build_env(extra_env),
     )
 
+    plan_output_lines = []
     async for line in process.stdout:
         text = line.decode().rstrip()
-        if text and on_line:
-            await on_line(text)
+        if text:
+            plan_output_lines.append(text)
+            if on_line:
+                await on_line(text)
 
     await process.wait()
     if process.returncode != 0:
-        return {"error": "Plan failed"}
+        raw = "\n".join(plan_output_lines)
+        err_msg = raw.strip()[-500:] if raw else "unknown error"
+        return {"error": f"Plan failed: {err_msg}", "raw_output": raw}
 
     output, _ = await run_terraform(
         workspace_path, ["show", "-json", plan_file], extra_env=extra_env

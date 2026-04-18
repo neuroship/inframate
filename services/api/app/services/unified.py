@@ -4,6 +4,33 @@ from app.services.terraform_parser import _extract_service, AWS_RESOURCES
 from app.services.aws_inventory import match_inventory_with_terraform
 from app.services.aws_resources import aws_console_url
 
+# Resource types that the cloud scanner actually covers.
+# Only these types can be reliably marked as "not in cloud" (drift).
+SCANNABLE_TYPES = {
+    "aws_instance", "aws_security_group", "aws_vpc", "aws_subnet",
+    "aws_s3_bucket",
+    "aws_ecs_cluster", "aws_ecs_service",
+    "aws_db_instance",
+    "aws_lambda_function",
+    "aws_iam_role", "aws_iam_policy",
+    "aws_lb", "aws_lb_target_group",
+    "aws_cloudwatch_log_group",
+    "aws_secretsmanager_secret",
+    "aws_ecr_repository",
+    "aws_kms_key",
+    "aws_efs_file_system",
+    "aws_sqs_queue",
+    "aws_sns_topic",
+    "aws_dynamodb_table",
+    "aws_route53_zone",
+    "aws_cloudfront_distribution",
+    "aws_cognito_user_pool",
+    "aws_guardduty_detector",
+    "aws_api_gateway_rest_api", "aws_apigatewayv2_api",
+    "aws_eks_cluster",
+    "aws_elasticache_cluster",
+}
+
 
 def derive_status(in_code: bool, in_state: bool, in_cloud: bool | None, action: str) -> str:
     """Derive unified status from presence in the three sources.
@@ -98,12 +125,17 @@ def merge_with_cloud(tf_rows, aws_resources: list[dict], region: str) -> list[di
                 "depends_on": [],
             })
 
-    # Mark TF rows that weren't matched as not in cloud
+    # Mark TF rows that weren't matched — only flag drift for scannable types
     for r in tf_rows:
         if r.get("in_cloud") is None:
-            r["in_cloud"] = False
-            r["status"] = derive_status(
-                r["in_code"], r["in_state"], False, r.get("action", "no-op")
-            )
+            rtype = r.get("resource_type", "")
+            if rtype in SCANNABLE_TYPES:
+                r["in_cloud"] = False
+                r["status"] = derive_status(
+                    r["in_code"], r["in_state"], False, r.get("action", "no-op")
+                )
+            else:
+                # Not a scannable type — keep as managed, cloud status unknown
+                r["in_cloud"] = None
 
     return tf_rows + unmanaged

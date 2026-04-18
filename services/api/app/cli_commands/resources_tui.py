@@ -3,8 +3,11 @@
 from collections import defaultdict
 
 from textual.app import App, ComposeResult
+from textual.screen import ModalScreen
 from textual.widgets import Tree as TreeWidget, Header, Footer, Static, Input
+from textual.containers import VerticalScroll
 from textual.binding import Binding
+from rich.markup import escape as esc
 from rich.text import Text
 
 
@@ -39,6 +42,188 @@ ACTION_LABELS = {
     "replace": "Replace",
     "no-op": "No change",
 }
+
+
+# --- Detail modal ---
+
+
+class ResourceDetailScreen(ModalScreen):
+    CSS = """
+    ResourceDetailScreen {
+        align: center middle;
+    }
+    #detail-dialog {
+        width: 90%;
+        max-width: 100;
+        height: 80%;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+    #detail-content {
+        height: 1fr;
+    }
+    #detail-footer {
+        height: 1;
+        color: $text-muted;
+        text-align: center;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close", priority=True),
+        Binding("enter", "dismiss", "Close", priority=True),
+        Binding("q", "dismiss", "Close", priority=True),
+    ]
+
+    def __init__(self, resource: dict):
+        super().__init__()
+        self.resource = resource
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="detail-dialog"):
+            yield Static(id="detail-content")
+            yield Static(id="detail-footer")
+
+    def on_mount(self) -> None:
+        r = self.resource
+        lines = []
+
+        name = r.get("resource_name", "")
+        rtype = r.get("display_type", r.get("resource_type", ""))
+        status = r.get("status", "managed")
+        action = r.get("action", "no-op")
+        status_color = STATUS_COLORS.get(status, "white")
+        action_color = ACTION_COLORS.get(action, "dim")
+
+        # Header
+        lines.append(f"[bold]{esc(rtype)}: {esc(name)}[/]")
+        lines.append("")
+
+        # Status & action
+        lines.append(f"  [dim]Status:[/]   [{status_color}]{STATUS_LABELS.get(status, status)}[/]")
+        lines.append(f"  [dim]Action:[/]   [{action_color}]{ACTION_LABELS.get(action, action)}[/]")
+        lines.append(f"  [dim]Address:[/]  {esc(r.get('id', ''))}")
+
+        # Presence
+        sd = "[blue]Yes[/]" if r.get("in_state") else "[dim]No[/]"
+        cd = "[magenta]Yes[/]" if r.get("in_code") else "[dim]No[/]"
+        if r.get("in_cloud") is True:
+            wd = "[cyan]Yes[/]"
+        elif r.get("in_cloud") is False:
+            wd = "[dim]No[/]"
+        else:
+            wd = "[dim]Unknown[/]"
+        lines.append(f"  [dim]In State:[/] {sd}   [dim]In Code:[/] {cd}   [dim]In Cloud:[/] {wd}")
+
+        # Location
+        if r.get("tf_file"):
+            loc = r["tf_file"]
+            if r.get("tf_line"):
+                loc += f":{r['tf_line']}"
+            lines.append(f"  [dim]File:[/]    {esc(loc)}")
+
+        # Cloud info
+        if r.get("cloud_id"):
+            lines.append(f"  [dim]Cloud ID:[/] {esc(r['cloud_id'])}")
+        if r.get("arn"):
+            lines.append(f"  [dim]ARN:[/]      {esc(r['arn'])}")
+        if r.get("console_url"):
+            lines.append(f"  [dim]Console:[/]  {esc(r['console_url'])}")
+
+        # Cost
+        cost = r.get("cost_monthly")
+        if cost and cost > 0:
+            lines.append(f"  [dim]Cost:[/]    ${cost:.2f}/mo")
+
+        # Tags
+        tags = r.get("tags") or {}
+        if tags and isinstance(tags, dict):
+            lines.append("")
+            lines.append("[bold]Tags[/]")
+            for k, v in sorted(tags.items()):
+                lines.append(f"  [dim]{esc(str(k))}:[/] {esc(str(v))}")
+
+        # Change details (before/after diff for update/replace)
+        before = r.get("before", {}) or {}
+        after = r.get("after", {}) or {}
+
+        if action == "create" and after:
+            lines.append("")
+            lines.append("[bold blue]Will be created with:[/]")
+            for k, v in sorted(after.items()):
+                if v is not None and k not in ("tags", "tags_all", "timeouts"):
+                    lines.append(f"  [blue]+[/] [dim]{k}:[/] {_fmt_val(v)}")
+
+        elif action == "destroy" and before:
+            lines.append("")
+            lines.append("[bold red]Will be destroyed:[/]")
+            for k, v in sorted(before.items()):
+                if v is not None and k not in ("tags", "tags_all", "timeouts"):
+                    lines.append(f"  [red]-[/] [dim]{k}:[/] {_fmt_val(v)}")
+
+        elif action in ("update", "replace") and before and after:
+            lines.append("")
+            label = "[bold yellow]Changes:[/]" if action == "update" else "[bold magenta]Replace (destroy + create):[/]"
+            lines.append(label)
+            all_keys = sorted(set(list(before.keys()) + list(after.keys())))
+            has_diff = False
+            for k in all_keys:
+                if k in ("tags", "tags_all", "timeouts"):
+                    continue
+                bv = before.get(k)
+                av = after.get(k)
+                if bv != av:
+                    has_diff = True
+                    if bv is None:
+                        lines.append(f"  [blue]+[/] [dim]{k}:[/] {_fmt_val(av)}")
+                    elif av is None:
+                        lines.append(f"  [red]-[/] [dim]{k}:[/] {_fmt_val(bv)}")
+                    else:
+                        lines.append(f"  [yellow]~[/] [dim]{k}:[/] {_fmt_val(bv)} → {_fmt_val(av)}")
+            if not has_diff:
+                lines.append("  [dim]No attribute changes detected (may be computed)[/]")
+
+        elif action == "no-op":
+            # Show current attributes
+            attrs = r.get("attributes", {})
+            if attrs:
+                lines.append("")
+                lines.append("[bold]Attributes[/]")
+                for k, v in sorted(attrs.items()):
+                    if v is not None and k not in ("tags", "tags_all", "timeouts") and v != "":
+                        lines.append(f"  [dim]{k}:[/] {_fmt_val(v)}")
+
+        content = self.query_one("#detail-content", Static)
+        content.update(Text.from_markup("\n".join(lines)))
+
+        footer = self.query_one("#detail-footer", Static)
+        footer.update(Text.from_markup("[dim]Press Escape to close[/]"))
+
+
+def _fmt_val(v) -> str:
+    """Format a value for display, truncating long strings. Output is markup-safe."""
+    if isinstance(v, dict):
+        if not v:
+            return "{}"
+        items = [f"{k}={_fmt_val(val)}" for k, val in list(v.items())[:5]]
+        s = "{" + ", ".join(items) + "}"
+        if len(v) > 5:
+            s += f" (+{len(v) - 5} more)"
+        return s
+    if isinstance(v, list):
+        if not v:
+            return "\\[]"
+        if len(v) <= 3:
+            return esc(str(v))
+        return esc(f"[{v[0]}, ... +{len(v) - 1} more]")
+    s = str(v)
+    if len(s) > 80:
+        return esc(s[:77] + "...")
+    return esc(s)
+
+
+# --- Main app ---
 
 
 class ResourcesApp(App):
@@ -85,6 +270,16 @@ class ResourcesApp(App):
     #search-input.visible {
         display: block;
     }
+    #filter-bar {
+        height: 1;
+        padding: 0 1;
+        background: $warning 15%;
+        color: $text;
+        display: none;
+    }
+    #filter-bar.active {
+        display: block;
+    }
     """
 
     BINDINGS = [
@@ -107,10 +302,12 @@ class ResourcesApp(App):
         Binding("c", "collapse_all", "Collapse all"),
         # Selection & actions
         Binding("space", "toggle_select", "Select", priority=True),
+        Binding("enter", "show_detail", "Detail", priority=True),
         Binding("r", "apply", "Apply", priority=True),
         Binding("x", "destroy_selected", "Destroy selected", priority=True),
-        # Costs
+        # Costs & refresh
         Binding("$", "load_costs", "Costs", priority=True),
+        Binding("f5", "refresh", "Refresh", priority=True),
         # Search
         Binding("/", "open_search", "Search", priority=True),
         Binding("escape", "close_search", "Close search", show=False, priority=True),
@@ -131,8 +328,9 @@ class ResourcesApp(App):
         if self._warnings:
             yield Static(id="warnings")
         yield Static(id="summary")
+        yield Static(id="filter-bar")
         yield Static(id="selection-bar")
-        yield Input(placeholder="Search resources...", id="search-input")
+        yield Input(placeholder="Search resources...", id="search-input", disabled=True)
         yield TreeWidget("Resources", id="tree")
         yield Static(id="legend")
         yield Footer()
@@ -150,7 +348,7 @@ class ResourcesApp(App):
             " [blue]S[/]=State  [magenta]C[/]=Code  [cyan]W[/]=Cloud   "
             "Status: [dim]a[/]ll [dim]m[/]anaged [dim]p[/]ending [dim]d[/]rift [dim]u[/]nmanaged [dim]o[/]rphaned   "
             "Action: [dim]1[/]create [dim]2[/]update [dim]3[/]destroy [dim]4[/]replace [dim]0[/]clear   "
-            "[dim]/[/]=search [dim]$[/]=costs [dim]space[/]=select [dim]r[/]=apply [dim]x[/]=destroy"
+            "[dim]/[/]=search [dim]$[/]=costs [dim]F5[/]=refresh [dim]space[/]=select [dim]enter[/]=detail [dim]r[/]=apply [dim]x[/]=destroy"
         ))
 
         self._rebuild()
@@ -217,9 +415,21 @@ class ResourcesApp(App):
                 return
         self.exit(result=("apply", selected))
 
+    def action_show_detail(self) -> None:
+        tree = self.query_one("#tree", TreeWidget)
+        node = tree.cursor_node
+        if not node:
+            return
+        if node.data is None:
+            node.toggle()
+            return
+        self.push_screen(ResourceDetailScreen(node.data))
+
+    def action_refresh(self) -> None:
+        self.exit(result=("refresh", []))
+
     def action_load_costs(self) -> None:
         if self.show_costs:
-            # Already showing costs — toggle off
             self.show_costs = False
             self._rebuild()
         else:
@@ -227,6 +437,7 @@ class ResourcesApp(App):
 
     def action_open_search(self) -> None:
         search_input = self.query_one("#search-input", Input)
+        search_input.disabled = False
         search_input.add_class("visible")
         search_input.focus()
 
@@ -235,6 +446,7 @@ class ResourcesApp(App):
         if not search_input.has_class("visible"):
             return
         search_input.remove_class("visible")
+        search_input.disabled = True
         search_input.value = ""
         self.search_query = ""
         self._rebuild()
@@ -249,6 +461,7 @@ class ResourcesApp(App):
         if event.input.id == "search-input":
             search_input = self.query_one("#search-input", Input)
             search_input.remove_class("visible")
+            search_input.disabled = True
             self.query_one("#tree", TreeWidget).focus()
 
     def _update_selection_bar(self) -> None:
@@ -271,7 +484,7 @@ class ResourcesApp(App):
         cd = "[magenta]C[/]" if r.get("in_code") else "[dim]·[/]"
         wd = "[cyan]W[/]" if r.get("in_cloud") else ("[dim]·[/]" if r.get("in_cloud") is not None else "[dim]?[/]")
 
-        name = r.get("resource_name", "")
+        name = esc(r.get("resource_name", ""))
         action = r.get("action", "")
         action_str = ""
         if action and action != "no-op":
@@ -350,6 +563,27 @@ class ResourcesApp(App):
                 summary_text += f"   [dim]│[/]   [bold]${total_cost:,.2f}/mo[/]"
 
         summary_text += f"   [dim]{showing}[/]"
+
+        # Filter bar — show active filters clearly
+        filter_bar = self.query_one("#filter-bar", Static)
+        filter_parts = []
+        if self.status_filter != "all":
+            color = STATUS_COLORS.get(self.status_filter, "white")
+            filter_parts.append(f"status: [{color}]{STATUS_LABELS.get(self.status_filter, self.status_filter)}[/]")
+        if self.action_filter != "all":
+            color = ACTION_COLORS.get(self.action_filter, "white")
+            filter_parts.append(f"action: [{color}]{ACTION_LABELS.get(self.action_filter, self.action_filter)}[/]")
+        if self.search_query:
+            filter_parts.append(f"search: [bold]\"{self.search_query}\"[/]")
+
+        if filter_parts:
+            filter_bar.update(Text.from_markup(
+                " [bold yellow]Filter:[/]  " + "  [dim]│[/]  ".join(filter_parts) +
+                f"  [dim]({len(rows)}/{len(self.all_rows)})[/]  —  [dim]a[/]=clear status  [dim]0[/]=clear action  [dim]esc[/]=clear search"
+            ))
+            filter_bar.add_class("active")
+        else:
+            filter_bar.remove_class("active")
 
         summary = self.query_one("#summary", Static)
         summary.update(Text.from_markup(summary_text))

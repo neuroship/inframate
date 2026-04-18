@@ -133,6 +133,8 @@ def _make_row(node, addr, res_type, res_name, plan_info, instance_key=None, loca
         "status": derive_status(in_code, in_state, None, action),
         "action": action,
         "attributes": attrs,
+        "before": plan_info.get("before", {}),
+        "after": plan_info.get("after", {}),
         "arn": attrs.get("arn", ""),
         "tags": attrs.get("tags", {}),
     }

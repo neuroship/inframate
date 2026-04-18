@@ -93,6 +93,20 @@
   let diffOldContent = $state("");
   let diffNewContent = $state("");
 
+  // Action filter
+  let activeActionFilter = $state("all");
+  const ACTION_FILTERS = [
+    { id: "all", label: "All", color: null },
+    { id: "create", label: "Create", color: "#6366f1" },
+    { id: "update", label: "Update", color: "#f59e0b" },
+    { id: "destroy", label: "Destroy", color: "#ef4444" },
+    { id: "replace", label: "Replace", color: "#ec4899" },
+  ];
+
+  // Resource detail modal
+  let detailOpen = $state(false);
+  let detailResource = $state(null);
+
   // Search
   let searchText = $state("");
 
@@ -658,10 +672,12 @@
   // --- Filters ---
 
   function computeStats(data) {
-    const s = { total: data.length, statuses: {} };
+    const s = { total: data.length, statuses: {}, actions: {} };
     for (const r of data) {
       const st = r.status || "managed";
       s.statuses[st] = (s.statuses[st] || 0) + 1;
+      const a = r.action || "";
+      if (a && a !== "no-op" && a !== "read") s.actions[a] = (s.actions[a] || 0) + 1;
     }
     stats = s;
   }
@@ -671,11 +687,19 @@
     applyFilters();
   }
 
+  function setActionFilter(actionId) {
+    activeActionFilter = actionId;
+    applyFilters();
+  }
+
   function applyFilters() {
     if (!gridApi) return;
     let filtered = allRows;
     if (activeStatusFilter !== "all") {
       filtered = filtered.filter(r => r.status === activeStatusFilter);
+    }
+    if (activeActionFilter !== "all") {
+      filtered = filtered.filter(r => r.action === activeActionFilter);
     }
     if (searchText.trim()) {
       const q = searchText.trim().toLowerCase();
@@ -690,7 +714,12 @@
     gridApi.setGridOption("rowData", filtered);
   }
 
-  $effect(() => { searchText; applyFilters(); });
+  function openResourceDetail(resource) {
+    detailResource = resource;
+    detailOpen = true;
+  }
+
+  $effect(() => { searchText; activeActionFilter; applyFilters(); });
 
   // --- Grid ---
 
@@ -731,6 +760,7 @@
           },
           rowSelection: { mode: "multiRow", checkboxes: true, headerCheckbox: true, groupSelects: "descendants" },
           onSelectionChanged: () => { selectedCount = gridApi?.getSelectedRows()?.length || 0; },
+          onRowDoubleClicked: (params) => { if (params.data && !params.node?.group) openResourceDetail(params.data); },
           rowHeight: 34,
           headerHeight: 32,
         });
@@ -1080,6 +1110,26 @@
         {/if}
       {/each}
 
+      {#if Object.keys(stats.actions || {}).length > 0}
+        <div class="w-px h-4 bg-base-content/10"></div>
+        {#each ACTION_FILTERS as af}
+          {@const count = af.id === "all" ? Object.values(stats.actions || {}).reduce((a, b) => a + b, 0) : (stats.actions?.[af.id] || 0)}
+          {#if af.id === "all" || count > 0}
+            <button
+              class="btn btn-xs {activeActionFilter === af.id ? 'btn-primary' : 'btn-soft'}"
+              style={activeActionFilter === af.id && af.color ? `background:${af.color};border-color:${af.color};` : ""}
+              onclick={() => setActionFilter(af.id)}
+            >
+              {#if af.color}
+                <span class="w-1.5 h-1.5 rounded-full" style="background: {af.color}"></span>
+              {/if}
+              {af.label}
+              {count}
+            </button>
+          {/if}
+        {/each}
+      {/if}
+
       {#if !cloudScanned && !cloudScanning}
         <span class="text-[10px] text-base-content/30 flex items-center gap-1">
           <span class="icon-[tabler--cloud-off] size-3"></span>
@@ -1134,6 +1184,206 @@
   newContent={diffNewContent}
   onapply={applyDiff}
 />
+
+<!-- Resource detail modal -->
+{#if detailOpen && detailResource}
+  {@const r = detailResource}
+  {@const statusStyles = { managed: { color: "#10b981", label: "Managed" }, pending: { color: "#6366f1", label: "Pending" }, drift: { color: "#f59e0b", label: "Drift" }, unmanaged: { color: "#f97316", label: "Unmanaged" }, orphaned: { color: "#ef4444", label: "Orphaned" } }}
+  {@const actionStyles = { "no-op": { color: "#10b981", label: "No Change" }, create: { color: "#6366f1", label: "Create" }, update: { color: "#f59e0b", label: "Update" }, destroy: { color: "#ef4444", label: "Destroy" }, replace: { color: "#ec4899", label: "Replace" } }}
+  {@const ss = statusStyles[r.status] || { color: "#6b7280", label: r.status }}
+  {@const as_ = actionStyles[r.action] || { color: "#6b7280", label: r.action }}
+  {@const before = r.before || {}}
+  {@const after = r.after || {}}
+  {@const attrs = r.attributes || {}}
+  {@const tags = r.tags || {}}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onclick={() => (detailOpen = false)}>
+    <div class="bg-base-100 w-[80vw] max-w-3xl max-h-[85vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onclick={(e) => e.stopPropagation()}>
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-base-content/10 bg-base-200/50">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold">{r.display_type || r.resource_type}: {r.resource_name}</span>
+          <span class="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded" style="background: {ss.color}20; color: {ss.color}">
+            <span class="w-1.5 h-1.5 rounded-full" style="background: {ss.color}"></span> {ss.label}
+          </span>
+          {#if r.action && r.action !== "no-op"}
+            <span class="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded" style="background: {as_.color}20; color: {as_.color}">
+              <span class="w-1.5 h-1.5 rounded-full" style="background: {as_.color}"></span> {as_.label}
+            </span>
+          {/if}
+        </div>
+        <button class="btn btn-text btn-xs btn-square" onclick={() => (detailOpen = false)}>
+          <span class="icon-[tabler--x] size-4"></span>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="overflow-y-auto flex-1 p-4 space-y-4 text-xs">
+        <!-- Info grid -->
+        <div class="grid grid-cols-2 gap-x-6 gap-y-1.5">
+          <div><span class="text-base-content/40">Address</span></div>
+          <div class="font-mono text-[11px]">{r.id}</div>
+
+          <div><span class="text-base-content/40">Presence</span></div>
+          <div class="flex items-center gap-3">
+            <span class="flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full" style="background: {r.in_state ? '#3b82f6' : 'transparent'}; border: 1px solid #3b82f6; opacity: {r.in_state ? 1 : 0.3}"></span>
+              State
+            </span>
+            <span class="flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full" style="background: {r.in_code ? '#8b5cf6' : 'transparent'}; border: 1px solid #8b5cf6; opacity: {r.in_code ? 1 : 0.3}"></span>
+              Code
+            </span>
+            <span class="flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full" style="background: {r.in_cloud === true ? '#06b6d4' : 'transparent'}; border: 1px solid #06b6d4; opacity: {r.in_cloud === true ? 1 : r.in_cloud === false ? 0.3 : 0.15}"></span>
+              Cloud{r.in_cloud === null ? " ?" : ""}
+            </span>
+          </div>
+
+          {#if r.tf_file}
+            <div><span class="text-base-content/40">File</span></div>
+            <div>
+              <button class="text-purple-400 hover:underline font-mono text-[11px]" onclick={() => { detailOpen = false; if (onnavigate) onnavigate({ file: r.tf_file, line: r.tf_line }); }}>
+                {r.tf_file}{r.tf_line ? `:${r.tf_line}` : ""}
+              </button>
+            </div>
+          {/if}
+
+          {#if r.arn}
+            <div><span class="text-base-content/40">ARN</span></div>
+            <div class="font-mono text-[10px] break-all text-base-content/60">{r.arn}</div>
+          {/if}
+
+          {#if r.cloud_id}
+            <div><span class="text-base-content/40">Cloud ID</span></div>
+            <div class="font-mono text-[11px]">{r.cloud_id}</div>
+          {/if}
+
+          {#if r.console_url}
+            <div><span class="text-base-content/40">Console</span></div>
+            <div><a href={r.console_url} target="_blank" rel="noopener" class="text-cyan-400 hover:underline text-[11px]">Open in AWS Console <span class="icon-[tabler--external-link] size-3 inline"></span></a></div>
+          {/if}
+
+          {#if r.cost_monthly != null && r.cost_monthly > 0}
+            <div><span class="text-base-content/40">Cost</span></div>
+            <div class="font-mono font-medium" style="color: {r.cost_monthly > 100 ? '#ef4444' : r.cost_monthly > 10 ? '#f59e0b' : '#10b981'}">${r.cost_monthly.toFixed(2)}/mo</div>
+          {/if}
+        </div>
+
+        <!-- Tags -->
+        {#if tags && typeof tags === "object" && Object.keys(tags).length > 0}
+          <div>
+            <div class="font-semibold text-base-content/60 mb-1.5">Tags</div>
+            <div class="flex flex-wrap gap-1.5">
+              {#each Object.entries(tags) as [k, v]}
+                <span class="text-[10px] px-2 py-0.5 rounded bg-base-content/5 font-mono">
+                  <span class="text-base-content/40">{k}:</span> {v}
+                </span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Changes (before/after) -->
+        {#if r.action === "create" && Object.keys(after).length > 0}
+          <div>
+            <div class="font-semibold mb-1.5" style="color: #6366f1">Will be created with</div>
+            <div class="bg-base-200/50 rounded-lg overflow-hidden border border-base-content/5">
+              <table class="w-full">
+                <tbody>
+                  {#each Object.entries(after).filter(([k, v]) => v != null && !["tags", "tags_all", "timeouts"].includes(k)) as [k, v]}
+                    <tr class="border-b border-base-content/5 last:border-0">
+                      <td class="px-3 py-1 font-mono text-[10px] font-semibold text-base-content/50 w-48 align-top">{k}</td>
+                      <td class="px-3 py-1 font-mono text-[10px] break-all">{typeof v === "object" ? JSON.stringify(v, null, 2) : String(v)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {:else if r.action === "destroy" && Object.keys(before).length > 0}
+          <div>
+            <div class="font-semibold mb-1.5" style="color: #ef4444">Will be destroyed</div>
+            <div class="bg-base-200/50 rounded-lg overflow-hidden border border-base-content/5">
+              <table class="w-full">
+                <tbody>
+                  {#each Object.entries(before).filter(([k, v]) => v != null && !["tags", "tags_all", "timeouts"].includes(k)) as [k, v]}
+                    <tr class="border-b border-base-content/5 last:border-0">
+                      <td class="px-3 py-1 font-mono text-[10px] font-semibold text-base-content/50 w-48 align-top">{k}</td>
+                      <td class="px-3 py-1 font-mono text-[10px] break-all">{typeof v === "object" ? JSON.stringify(v, null, 2) : String(v)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {:else if (r.action === "update" || r.action === "replace") && (Object.keys(before).length > 0 || Object.keys(after).length > 0)}
+          <div>
+            <div class="font-semibold mb-1.5" style="color: {r.action === 'replace' ? '#ec4899' : '#f59e0b'}">
+              {r.action === "replace" ? "Replace (destroy + create)" : "Changes"}
+            </div>
+            <div class="bg-base-200/50 rounded-lg overflow-hidden border border-base-content/5">
+              <table class="w-full">
+                <tbody>
+                  {#each [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(k => !["tags", "tags_all", "timeouts"].includes(k) && before[k] !== after[k]).sort() as k}
+                    {@const bv = before[k]}
+                    {@const av = after[k]}
+                    <tr class="border-b border-base-content/5 last:border-0">
+                      <td class="px-3 py-1 font-mono text-[10px] font-semibold text-base-content/50 w-48 align-top">
+                        {#if bv == null}<span style="color:#6366f1">+</span>{:else if av == null}<span style="color:#ef4444">-</span>{:else}<span style="color:#f59e0b">~</span>{/if}
+                        {k}
+                      </td>
+                      <td class="px-3 py-1 font-mono text-[10px] break-all">
+                        {#if bv == null}
+                          <span style="color:#6366f1">{typeof av === "object" ? JSON.stringify(av) : String(av)}</span>
+                        {:else if av == null}
+                          <span style="color:#ef4444" class="line-through">{typeof bv === "object" ? JSON.stringify(bv) : String(bv)}</span>
+                        {:else}
+                          <span style="color:#ef4444" class="line-through">{typeof bv === "object" ? JSON.stringify(bv) : String(bv)}</span>
+                          <span class="mx-1 text-base-content/20">&rarr;</span>
+                          <span style="color:#10b981">{typeof av === "object" ? JSON.stringify(av) : String(av)}</span>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {:else if Object.keys(attrs).length > 0}
+          <div>
+            <div class="font-semibold text-base-content/60 mb-1.5">Attributes</div>
+            <div class="bg-base-200/50 rounded-lg overflow-hidden border border-base-content/5 max-h-64 overflow-y-auto">
+              <table class="w-full">
+                <tbody>
+                  {#each Object.entries(attrs).filter(([k, v]) => v != null && v !== "" && !["tags", "tags_all", "timeouts"].includes(k)).sort() as [k, v]}
+                    <tr class="border-b border-base-content/5 last:border-0">
+                      <td class="px-3 py-1 font-mono text-[10px] font-semibold text-base-content/50 w-48 align-top">{k}</td>
+                      <td class="px-3 py-1 font-mono text-[10px] break-all">{typeof v === "object" ? JSON.stringify(v, null, 2) : String(v)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Dependencies -->
+        {#if r.depends_on && r.depends_on.length > 0}
+          <div>
+            <div class="font-semibold text-base-content/60 mb-1.5">Dependencies ({r.depends_on.length})</div>
+            <div class="flex flex-wrap gap-1.5">
+              {#each r.depends_on as dep}
+                <span class="text-[10px] px-2 py-0.5 rounded bg-base-content/5 font-mono">{dep}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   :global(.ag-watermark) {

@@ -23,7 +23,11 @@ def run_resources(
     json_output: bool = False,
     no_cloud: bool = False,
 ):
-    rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+    try:
+        rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+    except KeyboardInterrupt:
+        console.print("\n[muted]Interrupted.[/]")
+        return
 
     if json_output:
         if status:
@@ -33,9 +37,16 @@ def run_resources(
 
     # AI diagnosis flow if plan failed
     if plan_raw_output:
-        fixed = asyncio.run(_ai_fix_loop(project_dir, "plan", plan_raw_output, ["plan", "-no-color"]))
+        try:
+            fixed = asyncio.run(_ai_fix_loop(project_dir, "plan", plan_raw_output, ["plan", "-no-color"]))
+        except KeyboardInterrupt:
+            fixed = False
         if fixed:
-            rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+            try:
+                rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+            except KeyboardInterrupt:
+                console.print("\n[muted]Interrupted.[/]")
+                return
 
     # Main TUI loop — re-enters after apply/destroy/costs
     show_costs = False
@@ -49,18 +60,26 @@ def run_resources(
 
         action, resources = result
 
-        if action == "load_costs":
-            rows = asyncio.run(_load_costs(project_dir, rows))
-            show_costs = True
-            continue  # re-enter TUI without reloading all data
-        elif action == "apply":
-            _handle_apply(project_dir, resources)
-        elif action == "destroy":
-            _handle_destroy(project_dir, resources)
+        try:
+            if action == "refresh":
+                rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+                show_costs = False
+                continue
+            elif action == "load_costs":
+                rows = asyncio.run(_load_costs(project_dir, rows))
+                show_costs = True
+                continue
+            elif action == "apply":
+                _handle_apply(project_dir, resources)
+            elif action == "destroy":
+                _handle_destroy(project_dir, resources)
 
-        # Re-load data for next TUI iteration
-        rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
-        show_costs = False  # costs need re-fetching after changes
+            # Re-load data for next TUI iteration
+            rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+            show_costs = False
+        except KeyboardInterrupt:
+            console.print("\n[muted]Interrupted. Returning to TUI...[/]")
+            continue
 
 
 # --- AI diagnosis ---
@@ -366,7 +385,7 @@ async def _load_data(
 
     region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
 
-    from app.services.terraform_cli import get_plan_json, get_graph_dot
+    from app.services.terraform_cli import get_plan_json, get_graph_dot, stream_plan_with_output
     from app.services.terraform_parser import parse_dot_graph, get_resource_locations
     from app.services.plan_cache import get_cached_plan, save_cached_plan
     from app.services.overview import parse_plan_resources, build_overview_rows, _rows_from_state, OverviewResult
@@ -387,12 +406,21 @@ async def _load_data(
             plan_data = cached["plan_data"]
             progress.update(task, description=f"Graph: {len(graph['nodes'])} nodes. Plan loaded from cache.")
         else:
-            plan_data = await get_plan_json(project_dir)
+            n = len(graph['nodes'])
+
+            async def on_plan_line(line):
+                # Show last meaningful line from terraform in the spinner
+                short = line.strip()[:70]
+                if short:
+                    progress.update(task, description=f"Planning... {short}")
+
+            progress.update(task, description=f"Graph: {n} nodes. Running terraform plan...")
+            plan_data = await stream_plan_with_output(project_dir, on_line=on_plan_line)
             if not plan_data.get("error"):
                 save_cached_plan(project_dir, plan_data)
-                progress.update(task, description=f"Graph: {len(graph['nodes'])} nodes. Plan: {len(plan_data.get('resource_changes', []))} changes.")
+                progress.update(task, description=f"Graph: {n} nodes. Plan: {len(plan_data.get('resource_changes', []))} changes.")
             else:
-                progress.update(task, description=f"Graph: {len(graph['nodes'])} nodes. Plan failed, reading state...")
+                progress.update(task, description=f"Graph: {n} nodes. Plan failed, reading state...")
 
         if plan_data.get("error"):
             result.plan_error = plan_data["error"]
