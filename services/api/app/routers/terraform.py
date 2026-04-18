@@ -8,6 +8,7 @@ from app.schemas import TerraformCommand, FileContent
 from app.services.terraform_cli import (
     stream_terraform,
     stream_plan_with_output,
+    get_plan_json,
     get_state,
     get_graph_dot,
     get_providers,

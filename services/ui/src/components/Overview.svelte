@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from "svelte";
   import { createGrid, ModuleRegistry, AllCommunityModule, themeAlpine } from "ag-grid-community";
   import { AllEnterpriseModule } from "ag-grid-enterprise";
-  import { streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport, streamCheckAws, getVars, streamChatSession, getFile, updateFile } from "../lib/api.js";
+  import { streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport, streamCloudScan, getVars, streamChatSession, getFile, updateFile } from "../lib/api.js";
   import { lastActionError } from "../lib/stores.js";
   import { marked } from "marked";
   import ConfirmModal from "./ConfirmModal.svelte";
@@ -685,29 +685,29 @@
     checking = true;
     checkProgress = 0;
     checkTotal = 0;
-    const enrichedRows = [];
+    let resultRows = null;
 
-    streamCheckAws(
+    streamCloudScan(
       (raw) => {
         try {
           const msg = JSON.parse(raw);
-          if (msg.type === "start") {
+          if (msg.type === "scan_progress") {
             checkTotal = msg.total;
-          } else if (msg.type === "resource") {
-            enrichedRows.push(msg.data);
-            checkProgress = enrichedRows.length;
+            checkProgress = msg.done;
+          } else if (msg.type === "result") {
+            resultRows = msg.data;
           }
         } catch (_) {}
       },
       () => {
         checking = false;
-        if (enrichedRows.length > 0) {
+        if (resultRows && resultRows.length > 0) {
           // Preserve cost data from existing rows
           const costMap = {};
           for (const r of allRows) {
             if (r.cost_monthly != null) costMap[r.id] = r.cost_monthly;
           }
-          const merged = enrichedRows.map((r) => {
+          const merged = resultRows.map((r) => {
             const cost = costMap[r.id];
             return cost != null ? { ...r, cost_monthly: cost } : r;
           });

@@ -41,7 +41,11 @@
       {/if}
     </div>
 
-    <div class="navbar-end flex items-center">
+    <div class="navbar-end flex items-center gap-1">
+      <a href="https://inframate.sh" target="_blank" rel="noopener noreferrer" class="btn btn-soft btn-info btn-sm">
+        <span class="icon-[tabler--rocket] size-3.5"></span>
+        <span class="text-xs">Upgrade</span>
+      </a>
       <button class="btn btn-text btn-sm btn-square" onclick={toggleTheme} title="Toggle theme">
         <span class="{isDark ? 'icon-[tabler--sun]' : 'icon-[tabler--moon]'} size-4"></span>
       </button>

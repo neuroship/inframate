@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 
 import aioboto3
+from botocore.exceptions import ClientError
 
 
 # Map terraform resource type → (boto3 service, describe method, id key from tf attrs)
@@ -128,7 +129,7 @@ async def check_resource_exists(
                     if key in response:
                         result["live_arn"] = response[key]
                         break
-    except client.exceptions.ClientError as e:
+    except ClientError as e:
         code = e.response["Error"]["Code"]
         if code in ("ResourceNotFoundException", "NotFoundException", "NoSuchEntity",
                      "InvalidParameterValue", "ClusterNotFoundException", "DBInstanceNotFound",
