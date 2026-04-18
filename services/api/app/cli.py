@@ -25,7 +25,7 @@ def main():
 
     sub = parser.add_subparsers(dest="command")
 
-    ui_parser = sub.add_parser("ui", help="Start web UI")
+    ui_parser = sub.add_parser("serve", help="Start web server with UI")
     ui_parser.add_argument("--port", type=int, default=None, help="Port (default: from config or 8000)")
     ui_parser.add_argument("--no-browser", action="store_true", help="Don't open browser on startup")
 
@@ -45,12 +45,13 @@ def main():
     overrides = {}
     if hasattr(args, "port") and args.port is not None:
         overrides["port"] = args.port
+    config.init_config_dir()
     config.load_config(project_dir, overrides)
 
     _check_tf_files(project_dir)
 
     # Backend reachability check (skip for ui)
-    if args.command != "ui":
+    if args.command != "serve":
         from app.services.backend_check import check_backend
         ok, errors = check_backend(project_dir)
         if not ok:
@@ -61,7 +62,7 @@ def main():
             raise SystemExit(1)
 
     # Dispatch
-    if args.command == "ui":
+    if args.command == "serve":
         from app.cli_commands.ui import run_ui
         run_ui(project_dir, config.get_port(), args.no_browser)
     else:

@@ -67,7 +67,7 @@ async def chat_stream(
         yield "Error: AI not configured. Open Settings in the navbar to add your OpenAI endpoint and token."
         return
 
-    model = config.get("model") or "gpt-5.4"
+    model = config.get("model") or "gpt-4o"
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     if context:
         messages.append(
@@ -92,7 +92,7 @@ async def chat_session_stream(
         yield "Error: AI not configured. Open Settings in the navbar to add your OpenAI endpoint and token."
         return
 
-    model = config.get("model") or "gpt-5.4"
+    model = config.get("model") or "gpt-4o"
     messages = [{"role": "system", "content": SIDEBAR_PROMPT}]
     if context:
         messages.append(
@@ -121,7 +121,7 @@ async def diagnose_stream(
         yield "Error: AI not configured. Open Settings in the navbar to add your OpenAI endpoint and token."
         return
 
-    model = config.get("model") or "gpt-5.4"
+    model = config.get("model") or "gpt-4o"
     messages = [{"role": "system", "content": DIAGNOSE_PROMPT}]
     if workspace_context:
         messages.append(

@@ -107,7 +107,7 @@ class ResourcesApp(App):
         Binding("c", "collapse_all", "Collapse all"),
         # Selection & actions
         Binding("space", "toggle_select", "Select", priority=True),
-        Binding("enter", "apply", "Apply", priority=True),
+        Binding("r", "apply", "Apply", priority=True),
         Binding("x", "destroy_selected", "Destroy selected", priority=True),
         # Costs
         Binding("$", "load_costs", "Costs", priority=True),
@@ -150,7 +150,7 @@ class ResourcesApp(App):
             " [blue]S[/]=State  [magenta]C[/]=Code  [cyan]W[/]=Cloud   "
             "Status: [dim]a[/]ll [dim]m[/]anaged [dim]p[/]ending [dim]d[/]rift [dim]u[/]nmanaged [dim]o[/]rphaned   "
             "Action: [dim]1[/]create [dim]2[/]update [dim]3[/]destroy [dim]4[/]replace [dim]0[/]clear   "
-            "[dim]/[/]=search [dim]$[/]=costs [dim]space[/]=select [dim]enter[/]=apply [dim]x[/]=destroy"
+            "[dim]/[/]=search [dim]$[/]=costs [dim]space[/]=select [dim]r[/]=apply [dim]x[/]=destroy"
         ))
 
         self._rebuild()
@@ -257,7 +257,7 @@ class ResourcesApp(App):
         if n > 0:
             bar.add_class("has-selection")
             bar.update(Text.from_markup(
-                f" [bold]{n}[/] selected  —  press [bold]enter[/] to apply, [bold]x[/] to destroy, [bold]space[/] to toggle"
+                f" [bold]{n}[/] selected  —  [bold]r[/]=apply  [bold]x[/]=destroy  [bold]space[/]=toggle"
             ))
         else:
             bar.remove_class("has-selection")

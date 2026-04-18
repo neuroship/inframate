@@ -102,11 +102,11 @@ async def _ai_fix_loop(project_dir: str, command: str, error_output: str, rerun_
     ai_config = config.get_ai_config()
     if not ai_config.get("api_token"):
         console.print()
-        console.print("  [muted]Tip: set OPENAI_API_KEY or configure ai.api_token in .inframate.yml to get AI fix suggestions[/]")
-        console.print("  [muted]Example .inframate.yml:[/]")
+        console.print("  [muted]Tip: configure AI to get fix suggestions. Edit ~/.inframate/config.yml:[/]")
         console.print("  [muted]  ai:[/]")
+        console.print("  [muted]    provider: openai  # or: anthropic, ollama, groq, deepseek[/]")
         console.print("  [muted]    api_token: sk-...[/]")
-        console.print("  [muted]    model: gpt-4o[/]")
+        console.print("  [muted]Or set OPENAI_API_KEY environment variable.[/]")
         console.print()
         return False
 

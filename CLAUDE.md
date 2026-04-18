@@ -4,20 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is this
 
-inframate is a CLI tool for managing Terraform infrastructure. It serves a local web UI for browsing, editing, planning, and applying Terraform configurations, managing AWS resources (inventory, costs, deletion), and includes an AI chat assistant.
+inframate is a CLI tool for managing Terraform infrastructure. It provides an interactive TUI for browsing, applying, and destroying resources, detecting drift, viewing costs, and AI-assisted error fixing. It also serves a web UI for browser-based management.
 
 ## Usage
 
 ```bash
-# Install
-inframate              # or: pipx install inframate, brew install inframate
-
-# Run in a terraform project directory
 cd my-terraform-project
-inframate                        # starts at http://localhost:8000
-inframate --port 9000            # custom port
-inframate --dir /path/to/project # explicit directory
-inframate --no-browser           # don't auto-open browser
+inframate                # interactive TUI (default)
+inframate --no-cloud     # skip cloud scan
+inframate --json         # JSON output
+inframate serve             # web UI at http://localhost:8000
 ```
 
 ## Commands
@@ -43,14 +39,16 @@ task run
 Two services under `services/`:
 
 **`services/api`** - Python 3.13 / FastAPI backend
-- Entry point: `app/cli.py` - CLI with argparse, starts uvicorn
+- Entry point: `app/cli.py` - CLI with argparse, dispatches to TUI or web UI
 - App factory: `app/main.py` - creates FastAPI app, mounts routers + static files
-- `app/config.py` - YAML config at `.inframate.yml` (AI settings, AWS config)
+- `app/config.py` - YAML config: global `~/.inframate/config.yml` + project `.inframate.yml`
 - `app/routers/` - API route handlers (terraform, aws, ai, settings)
 - `app/services/` - business logic (terraform CLI/parser, AWS inventory/costs/delete, AI)
+- `app/cli_commands/resources.py` - main CLI flow: load data, AI fix loop, TUI loop
+- `app/cli_commands/resources_tui.py` - Textual TUI: tree view, search, apply, destroy, costs
 - Uses SSE for streaming operations (terraform plan/apply, AWS inventory, AI chat)
 - Package manager: `uv` with `pyproject.toml`
-- No database - settings stored in TOML config file
+- No database - settings stored in YAML config files
 
 **`services/ui`** - Svelte 5 / Vite frontend
 - Single-page app, no routing (always shows workspace view)
@@ -64,8 +62,22 @@ Two services under `services/`:
 - Streaming uses SSE with `data: ` prefix and `[DONE]` sentinel
 - No auth - local CLI tool, single user
 - Project directory set via CLI `--dir` flag, stored in `app.state.project_dir`
-- AWS config stored in `app.state.aws_config` (runtime) + `~/.inframate/config.toml` (persistent)
-- AI config stored in `~/.inframate/config.toml`
+- Config priority: env vars > project `.inframate.yml` > global `~/.inframate/config.yml` > defaults
+- AI providers: openai, anthropic, ollama, groq, deepseek (all via OpenAI-compatible client)
+
+## CLI flow (resources.py)
+
+```
+inframate
+  ├── Load data (terraform graph + plan + cloud scan)
+  ├── Plan error? → AI fix loop (diagnose → file changes + commands → re-plan)
+  └── TUI loop:
+      ├── Enter → Apply (confirm → stream apply → AI fix on failure)
+      ├── x → Destroy (confirm → terraform destroy / AWS API → AI fix on failure)
+      ├── $ → Load costs (fetch AWS billing → show in tree)
+      ├── / → Search resources
+      └── q → Quit
+```
 
 ## API routes
 

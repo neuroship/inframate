@@ -6,8 +6,6 @@ app/main.py
 app/schemas.py
 app/cli_commands/__init__.py
 app/cli_commands/console.py
-app/cli_commands/costs.py
-app/cli_commands/orphans.py
 app/cli_commands/resources.py
 app/cli_commands/resources_tui.py
 app/cli_commands/ui.py
