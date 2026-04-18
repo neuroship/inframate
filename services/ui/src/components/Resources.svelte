@@ -579,6 +579,7 @@
       activeStatusFilter = "all";
       computeStats(data);
       gridApi?.setGridOption("rowData", data);
+      triggerCloudScan();
     } catch (_) {}
   }
 
@@ -605,6 +606,7 @@
       () => {
         planRefreshing = false; loadPhase = ""; loadLog = "";
         gridApi?.setGridOption("loading", false);
+        triggerCloudScan();
         fetchCosts();
       }
     );
