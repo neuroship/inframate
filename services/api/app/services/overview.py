@@ -150,6 +150,7 @@ class OverviewResult:
         self.graph_nodes = 0
         self.plan_resources = 0
         self.plan_error: str | None = None
+        self.plan_raw_output: str = ""
         self.source = "plan"  # "plan" or "state"
         self.warnings: list[str] = []
 

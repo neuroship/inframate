@@ -3,7 +3,7 @@
 from collections import defaultdict
 
 from textual.app import App, ComposeResult
-from textual.widgets import Tree as TreeWidget, Header, Footer, Static
+from textual.widgets import Tree as TreeWidget, Header, Footer, Static, Input
 from textual.binding import Binding
 from rich.text import Text
 
@@ -77,6 +77,14 @@ class ResourcesApp(App):
     TreeWidget {
         padding: 0 1;
     }
+    #search-input {
+        display: none;
+        height: 1;
+        margin: 0 1;
+    }
+    #search-input.visible {
+        display: block;
+    }
     """
 
     BINDINGS = [
@@ -97,17 +105,25 @@ class ResourcesApp(App):
         # Tree
         Binding("e", "expand_all", "Expand all"),
         Binding("c", "collapse_all", "Collapse all"),
-        # Selection
+        # Selection & actions
         Binding("space", "toggle_select", "Select", priority=True),
+        Binding("enter", "apply", "Apply", priority=True),
         Binding("x", "destroy_selected", "Destroy selected", priority=True),
+        # Costs
+        Binding("$", "load_costs", "Costs", priority=True),
+        # Search
+        Binding("/", "open_search", "Search", priority=True),
+        Binding("escape", "close_search", "Close search", show=False, priority=True),
     ]
 
-    def __init__(self, rows: list[dict], warnings: list[str] | None = None):
+    def __init__(self, rows: list[dict], warnings: list[str] | None = None, show_costs: bool = False):
         super().__init__()
         self.all_rows = rows
         self._warnings = warnings or []
+        self.show_costs = show_costs
         self.status_filter = "all"
         self.action_filter = "all"
+        self.search_query = ""
         self.selected_ids: set[str] = set()
 
     def compose(self) -> ComposeResult:
@@ -116,12 +132,13 @@ class ResourcesApp(App):
             yield Static(id="warnings")
         yield Static(id="summary")
         yield Static(id="selection-bar")
+        yield Input(placeholder="Search resources...", id="search-input")
         yield TreeWidget("Resources", id="tree")
         yield Static(id="legend")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "inframate resources"
+        self.title = "inframate"
         self.sub_title = f"{len(self.all_rows)} resources"
 
         if self._warnings:
@@ -133,7 +150,7 @@ class ResourcesApp(App):
             " [blue]S[/]=State  [magenta]C[/]=Code  [cyan]W[/]=Cloud   "
             "Status: [dim]a[/]ll [dim]m[/]anaged [dim]p[/]ending [dim]d[/]rift [dim]u[/]nmanaged [dim]o[/]rphaned   "
             "Action: [dim]1[/]create [dim]2[/]update [dim]3[/]destroy [dim]4[/]replace [dim]0[/]clear   "
-            "[dim]space[/]=select [dim]x[/]=destroy"
+            "[dim]/[/]=search [dim]$[/]=costs [dim]space[/]=select [dim]enter[/]=apply [dim]x[/]=destroy"
         ))
 
         self._rebuild()
@@ -144,6 +161,12 @@ class ResourcesApp(App):
             rows = [r for r in rows if r.get("status") == self.status_filter]
         if self.action_filter != "all":
             rows = [r for r in rows if r.get("action") == self.action_filter]
+        if self.search_query:
+            q = self.search_query.lower()
+            rows = [r for r in rows if q in (r.get("resource_name", "") or "").lower()
+                    or q in (r.get("display_type", r.get("resource_type", "")) or "").lower()
+                    or q in (r.get("service", "") or "").lower()
+                    or q in (r.get("id", "") or "").lower()]
         return rows
 
     def action_filter_status(self, status: str) -> None:
@@ -175,7 +198,6 @@ class ResourcesApp(App):
             self.selected_ids.discard(rid)
         else:
             self.selected_ids.add(rid)
-        # Update just this node's label
         node.set_label(self._resource_label(node.data))
         self._update_selection_bar()
 
@@ -186,13 +208,56 @@ class ResourcesApp(App):
             return
         self.exit(result=("destroy", selected))
 
+    def action_apply(self) -> None:
+        selected = [r for r in self.all_rows if r.get("id") in self.selected_ids]
+        if not selected:
+            actionable = [r for r in self.all_rows if r.get("action") and r.get("action") != "no-op"]
+            if not actionable:
+                self.notify("No changes to apply.", severity="warning")
+                return
+        self.exit(result=("apply", selected))
+
+    def action_load_costs(self) -> None:
+        if self.show_costs:
+            # Already showing costs — toggle off
+            self.show_costs = False
+            self._rebuild()
+        else:
+            self.exit(result=("load_costs", []))
+
+    def action_open_search(self) -> None:
+        search_input = self.query_one("#search-input", Input)
+        search_input.add_class("visible")
+        search_input.focus()
+
+    def action_close_search(self) -> None:
+        search_input = self.query_one("#search-input", Input)
+        if not search_input.has_class("visible"):
+            return
+        search_input.remove_class("visible")
+        search_input.value = ""
+        self.search_query = ""
+        self._rebuild()
+        self.query_one("#tree", TreeWidget).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "search-input":
+            self.search_query = event.value
+            self._rebuild()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "search-input":
+            search_input = self.query_one("#search-input", Input)
+            search_input.remove_class("visible")
+            self.query_one("#tree", TreeWidget).focus()
+
     def _update_selection_bar(self) -> None:
         bar = self.query_one("#selection-bar", Static)
         n = len(self.selected_ids)
         if n > 0:
             bar.add_class("has-selection")
             bar.update(Text.from_markup(
-                f" [bold]{n}[/] selected  —  press [bold]x[/] to destroy, [bold]space[/] to toggle"
+                f" [bold]{n}[/] selected  —  press [bold]enter[/] to apply, [bold]x[/] to destroy, [bold]space[/] to toggle"
             ))
         else:
             bar.remove_class("has-selection")
@@ -218,8 +283,19 @@ class ResourcesApp(App):
             }
             action_str = action_map.get(action, f" [dim]{action}[/]")
 
+        cost_str = ""
+        if self.show_costs:
+            cost = r.get("cost_monthly")
+            if cost and cost > 0:
+                if cost > 100:
+                    cost_str = f" [red bold]${cost:.2f}/mo[/]"
+                elif cost > 10:
+                    cost_str = f" [yellow]${cost:.2f}/mo[/]"
+                else:
+                    cost_str = f" [green]${cost:.2f}/mo[/]"
+
         check = "[bold green]✓[/]" if selected else " "
-        return Text.from_markup(f"{check} {sd}{cd}{wd} [{color}]●[/] {name}{action_str}")
+        return Text.from_markup(f"{check} {sd}{cd}{wd} [{color}]●[/] {name}{action_str}{cost_str}")
 
     def _rebuild(self) -> None:
         rows = self._filtered_rows()
@@ -258,11 +334,21 @@ class ResourcesApp(App):
             else:
                 action_parts.append(f"[{color}]  {ACTION_LABELS[a]} {c}[/]")
 
-        showing = f"showing {len(rows)}/{len(self.all_rows)}" if (self.status_filter != "all" or self.action_filter != "all") else f"{len(self.all_rows)} total"
+        is_filtered = self.status_filter != "all" or self.action_filter != "all" or self.search_query
+        showing = f"showing {len(rows)}/{len(self.all_rows)}" if is_filtered else f"{len(self.all_rows)} total"
+        if self.search_query:
+            showing += f" [dim]search: \"{self.search_query}\"[/]"
 
         summary_text = f"{'  '.join(status_parts)}"
         if action_parts:
             summary_text += f"   [dim]│[/]   {'  '.join(action_parts)}"
+
+        # Cost summary
+        if self.show_costs:
+            total_cost = sum(r.get("cost_monthly") or 0 for r in self.all_rows)
+            if total_cost > 0:
+                summary_text += f"   [dim]│[/]   [bold]${total_cost:,.2f}/mo[/]"
+
         summary_text += f"   [dim]{showing}[/]"
 
         summary = self.query_one("#summary", Static)
@@ -284,7 +370,12 @@ class ResourcesApp(App):
         for svc in sorted_svcs:
             types = groups[svc]
             svc_count = sum(len(rs) for rs in types.values())
-            svc_label = Text.from_markup(f"[bold cyan]{svc}[/] [dim]({svc_count})[/]")
+            svc_cost_str = ""
+            if self.show_costs:
+                svc_cost = sum(r.get("cost_monthly") or 0 for rs in types.values() for r in rs)
+                if svc_cost > 0:
+                    svc_cost_str = f"  [bold]${svc_cost:,.2f}/mo[/]"
+            svc_label = Text.from_markup(f"[bold cyan]{svc}[/] [dim]({svc_count})[/]{svc_cost_str}")
             svc_node = tree.root.add(svc_label)
 
             sorted_types = sorted(types, key=lambda t: len(types[t]), reverse=True)

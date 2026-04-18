@@ -45,7 +45,7 @@ Two services under `services/`:
 **`services/api`** - Python 3.13 / FastAPI backend
 - Entry point: `app/cli.py` - CLI with argparse, starts uvicorn
 - App factory: `app/main.py` - creates FastAPI app, mounts routers + static files
-- `app/config.py` - TOML config at `~/.inframate/config.toml` (AI settings, AWS config)
+- `app/config.py` - YAML config at `.inframate.yml` (AI settings, AWS config)
 - `app/routers/` - API route handlers (terraform, aws, ai, settings)
 - `app/services/` - business logic (terraform CLI/parser, AWS inventory/costs/delete, AI)
 - Uses SSE for streaming operations (terraform plan/apply, AWS inventory, AI chat)

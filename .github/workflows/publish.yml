@@ -80,28 +80,28 @@ jobs:
         run: |
           mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/inframate.rb << 'ENDFORMULA'
-class Inframate < Formula
-  desc "CLI tool for managing Terraform infrastructure with a local web UI"
-  homepage "https://github.com/neuroship/inframate"
-  url "__URL__"
-  sha256 "__SHA__"
-  license "MIT"
+          class Inframate < Formula
+            desc "CLI tool for managing Terraform infrastructure with a local web UI"
+            homepage "https://github.com/neuroship/inframate"
+            url "__URL__"
+            sha256 "__SHA__"
+            license "MIT"
 
-  depends_on "python@3.13"
+            depends_on "python@3.13"
 
-  def install
-    python = Formula["python@3.13"].opt_bin/"python3.13"
-    venv = libexec/"venv"
-    system python, "-m", "venv", venv
-    system venv/"bin/pip", "install", "."
-    bin.install_symlink venv/"bin/inframate"
-  end
+            def install
+              python = Formula["python@3.13"].opt_bin/"python3.13"
+              venv = libexec/"venv"
+              system python, "-m", "venv", venv
+              system venv/"bin/pip", "install", "."
+              bin.install_symlink venv/"bin/inframate"
+            end
 
-  test do
-    assert_match "inframate", shell_output("#{bin}/inframate --help")
-  end
-end
-ENDFORMULA
+            test do
+              assert_match "inframate", shell_output("#{bin}/inframate --help")
+            end
+          end
+          ENDFORMULA
           sed -i "s|__URL__|${TARBALL_URL}|; s|__SHA__|${TARBALL_SHA}|" homebrew-tap/Formula/inframate.rb
 
       - name: Push to tap

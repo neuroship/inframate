@@ -7,9 +7,7 @@ app/schemas.py
 app/cli_commands/__init__.py
 app/cli_commands/console.py
 app/cli_commands/costs.py
-app/cli_commands/fix.py
 app/cli_commands/orphans.py
-app/cli_commands/plan.py
 app/cli_commands/resources.py
 app/cli_commands/resources_tui.py
 app/cli_commands/ui.py
@@ -31,7 +29,7 @@ app/services/terraform_parser.py
 app/services/unified.py
 app/services/version_check.py
 app/static/index.html
-app/static/assets/index-DFe6LG_-.js
+app/static/assets/index-Wl_KZRB4.js
 app/static/assets/index-k-jZm5g_.css
 inframate.egg-info/PKG-INFO
 inframate.egg-info/SOURCES.txt

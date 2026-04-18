@@ -1,6 +1,7 @@
 """Delete AWS resources via boto3 with pre-condition handling."""
 
 import aioboto3
+from botocore.exceptions import ClientError
 
 
 # Map resource type -> (boto3 service, delete method, id param name, param_type)
@@ -349,5 +350,16 @@ async def delete_resource(
             await fn(**kwargs)
 
         return {"ok": True, "message": f"Deleted {name}"}
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in (
+            "NoSuchBucket",
+            "NotFoundException",
+            "ResourceNotFoundException",
+            "NoSuchEntity",
+            "InvalidParameterValue",
+        ):
+            return {"ok": True, "message": f"{name} already deleted"}
+        return {"ok": False, "message": f"Failed to delete {name}: {e}"}
     except Exception as e:
         return {"ok": False, "message": f"Failed to delete {name}: {e}"}

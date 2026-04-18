@@ -33,12 +33,18 @@ Analyze the output and respond in markdown with:
 1. **What went wrong** — brief root cause
 2. **How to fix it** — specific, actionable steps
 3. **Corrected code** — if the fix involves HCL changes, show the COMPLETE corrected file content
+4. **Commands to run** — if the fix requires CLI commands (terraform import, terraform state rm, aws cli, etc.)
 
 IMPORTANT: When showing code fixes, use this exact format so the user can apply them directly:
 
 File: <filename>
 ```hcl
 <complete updated file content>
+```
+
+When suggesting commands to run, use bash code blocks:
+```bash
+terraform import aws_s3_bucket.foo my-bucket
 ```
 
 Always show the COMPLETE file content (not partial snippets) so it can be applied as a replacement.

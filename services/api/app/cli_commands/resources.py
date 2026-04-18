@@ -1,10 +1,19 @@
 import asyncio
 import json as json_mod
 import os
+import re
+import sys
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn
+from rich.prompt import Confirm
+from rich.syntax import Syntax
 
+from app import config
 from app.cli_commands.console import console
+
+
+FILE_PATTERN = re.compile(r'File:\s*(\S+)\s*\n```\w*\n(.*?)```', re.DOTALL)
+CMD_PATTERN = re.compile(r'```(?:bash|sh|shell)\n(.*?)```', re.DOTALL)
 
 
 def run_resources(
@@ -14,7 +23,7 @@ def run_resources(
     json_output: bool = False,
     no_cloud: bool = False,
 ):
-    rows, warnings = asyncio.run(_load_data(project_dir, service, no_cloud))
+    rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
 
     if json_output:
         if status:
@@ -22,24 +31,235 @@ def run_resources(
         print(json_mod.dumps(rows, indent=2))
         return
 
-    from app.cli_commands.resources_tui import ResourcesApp
-    app = ResourcesApp(rows, warnings=warnings)
-    result = app.run()
+    # AI diagnosis flow if plan failed
+    if plan_raw_output:
+        fixed = asyncio.run(_ai_fix_loop(project_dir, "plan", plan_raw_output, ["plan", "-no-color"]))
+        if fixed:
+            rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
 
-    if isinstance(result, tuple) and result[0] == "destroy":
-        _handle_destroy(project_dir, result[1])
+    # Main TUI loop — re-enters after apply/destroy/costs
+    show_costs = False
+    while True:
+        from app.cli_commands.resources_tui import ResourcesApp
+        app = ResourcesApp(rows, warnings=warnings, show_costs=show_costs)
+        result = app.run()
+
+        if not isinstance(result, tuple):
+            break
+
+        action, resources = result
+
+        if action == "load_costs":
+            rows = asyncio.run(_load_costs(project_dir, rows))
+            show_costs = True
+            continue  # re-enter TUI without reloading all data
+        elif action == "apply":
+            _handle_apply(project_dir, resources)
+        elif action == "destroy":
+            _handle_destroy(project_dir, resources)
+
+        # Re-load data for next TUI iteration
+        rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+        show_costs = False  # costs need re-fetching after changes
+
+
+# --- AI diagnosis ---
+
+
+def _parse_commands(response: str) -> list[str]:
+    """Extract runnable commands from bash/sh/shell code blocks (excluding file changes)."""
+    file_spans = {(m.start(), m.end()) for m in FILE_PATTERN.finditer(response)}
+
+    commands = []
+    for m in CMD_PATTERN.finditer(response):
+        # Skip if this code block overlaps with a file change
+        if any(fs[0] <= m.start() <= fs[1] for fs in file_spans):
+            continue
+        block = m.group(1).strip()
+        for line in block.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                commands.append(line)
+    return commands
+
+
+async def _run_command(project_dir: str, command: str) -> tuple[str, int]:
+    """Run a shell command in the project directory."""
+    process = await asyncio.create_subprocess_shell(
+        command,
+        cwd=project_dir,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ},
+    )
+    stdout, _ = await process.communicate()
+    return stdout.decode(), process.returncode
+
+
+async def _ai_fix_loop(project_dir: str, command: str, error_output: str, rerun_args: list[str]) -> bool:
+    """Chat-like AI diagnosis loop for plan/apply/destroy errors.
+    Returns True if command succeeded after fix."""
+    ai_config = config.get_ai_config()
+    if not ai_config.get("api_token"):
+        console.print()
+        console.print("  [muted]Tip: set OPENAI_API_KEY or configure ai.api_token in .inframate.yml to get AI fix suggestions[/]")
+        console.print("  [muted]Example .inframate.yml:[/]")
+        console.print("  [muted]  ai:[/]")
+        console.print("  [muted]    api_token: sk-...[/]")
+        console.print("  [muted]    model: gpt-4o[/]")
+        console.print()
+        return False
+
+    from app.services.terraform_cli import run_terraform
+    from app.services.terraform_parser import load_project_context, write_file
+    from app.services.ai_service import diagnose_stream
+    from app.services.plan_cache import invalidate_cache
+
+    context = load_project_context(project_dir)
+    current_output = error_output
+
+    while True:
+        console.print()
+        console.print(f"  [warning]{command.capitalize()} failed.[/] Diagnosing with AI...\n")
+
+        # Stream AI response
+        full_response = []
+        console.print("  [bold cyan]--- AI Diagnosis ---[/]\n")
+        async for chunk in diagnose_stream(command, current_output, context, ai_config):
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+            full_response.append(chunk)
+        sys.stdout.write("\n\n")
+
+        response_text = "".join(full_response)
+        changes = [(m.group(1), m.group(2)) for m in FILE_PATTERN.finditer(response_text)]
+        commands = _parse_commands(response_text)
+
+        if not changes and not commands:
+            console.print("  [muted]No actionable suggestions from AI.[/]\n")
+            return False
+
+        applied_something = False
+
+        # File changes
+        if changes:
+            console.print(f"  [bold]{len(changes)} file change(s) suggested:[/]\n")
+            for filename, content in changes:
+                console.print(f"  [cyan]{filename}[/]")
+                console.print(Syntax(content.strip(), "hcl", theme="monokai", line_numbers=True, padding=1))
+                console.print()
+
+            if Confirm.ask("  Apply file changes?", default=True, console=console):
+                for filename, content in changes:
+                    if write_file(project_dir, filename, content):
+                        console.print(f"    [success]✓ Updated {filename}[/]")
+                    else:
+                        console.print(f"    [error]✕ Failed to write {filename}[/]")
+                applied_something = True
+
+        # Commands
+        if commands:
+            console.print(f"\n  [bold]{len(commands)} command(s) suggested:[/]\n")
+            for cmd in commands:
+                console.print(f"    [cyan]$ {cmd}[/]")
+            console.print()
+
+            if Confirm.ask("  Run these commands?", default=True, console=console):
+                for cmd in commands:
+                    console.print(f"\n    [dim]$ {cmd}[/]")
+                    cmd_output, code = await _run_command(project_dir, cmd)
+                    if cmd_output.strip():
+                        for line in cmd_output.strip().splitlines():
+                            console.print(f"    {line}")
+                    if code == 0:
+                        console.print(f"    [success]✓ Done[/]")
+                    else:
+                        console.print(f"    [error]✕ Exit code {code}[/]")
+                applied_something = True
+
+        if not applied_something:
+            console.print("  [muted]No changes applied.[/]\n")
+            return False
+
+        # Invalidate cache and re-run
+        invalidate_cache(project_dir)
+
+        console.print(f"\n  Re-running {command}...")
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+            progress.add_task(f"Running terraform {command}...", total=None)
+            output, code = await run_terraform(project_dir, rerun_args)
+
+        if code == 0:
+            console.print(f"  [success]✓ {command.capitalize()} succeeded![/]\n")
+            return True
+
+        # Still failing — offer another round
+        current_output = output
+        console.print(f"  [warning]{command.capitalize()} still failing.[/]")
+        if not Confirm.ask("  Try AI diagnosis again?", default=True, console=console):
+            return False
+
+        context = load_project_context(project_dir)
+
+
+# --- Apply flow ---
+
+
+def _handle_apply(project_dir: str, resources: list[dict]):
+    """Run terraform apply with confirmation and AI fix on failure."""
+    if resources:
+        console.print(f"\n[bold]Apply {len(resources)} resource(s)?[/]\n")
+        for r in resources:
+            name = r.get("resource_name", "")
+            action = r.get("action", "")
+            symbols = {"create": "+", "update": "~", "destroy": "-", "replace": "±"}
+            colors = {"create": "blue", "update": "yellow", "destroy": "red", "replace": "magenta"}
+            s = symbols.get(action, "?")
+            c = colors.get(action, "dim")
+            rtype = r.get("display_type", r.get("resource_type", ""))
+            console.print(f"  [{c}]{s}[/] {rtype}: {name} [{c}]{action}[/]")
+    else:
+        console.print("\n[bold]Apply all planned changes?[/]")
+
+    console.print()
+    if not Confirm.ask("Proceed?", default=False, console=console):
+        console.print("[muted]Cancelled.[/]")
+        return
+
+    asyncio.run(_run_apply(project_dir, resources))
+
+
+async def _run_apply(project_dir: str, resources: list[dict]):
+    """Stream terraform apply, then AI fix loop on failure."""
+    args = ["apply"]
+    if resources:
+        args += [f"-target={r['id']}" for r in resources]
+
+    console.print(f"\n[bold]Running terraform apply...[/]\n")
+    output, code = await _stream_and_capture(project_dir, args)
+
+    if code == 0:
+        console.print("\n[success]✓ Apply succeeded![/]")
+        return
+
+    # Build re-run args for AI fix loop (run_terraform doesn't auto-add flags)
+    rerun = ["apply", "-auto-approve", "-no-color"]
+    if resources:
+        rerun += [f"-target={r['id']}" for r in resources]
+
+    await _ai_fix_loop(project_dir, "apply", output, rerun)
+
+
+# --- Destroy flow ---
 
 
 def _handle_destroy(project_dir: str, resources: list[dict]):
-    """Run destroy after TUI exits with selected resources."""
-    from rich.prompt import Confirm
-
+    """Run destroy with confirmation and AI fix on failure."""
     tf_resources = [r for r in resources if r.get("in_code") or r.get("in_state")]
     aws_only = [r for r in resources if r.get("status") == "unmanaged"]
 
     console.print(f"\n[bold red]Destroy {len(resources)} resource(s)?[/]\n")
     for r in resources:
-        status = r.get("status", "")
         name = r.get("resource_name", "")
         rtype = r.get("display_type", r.get("resource_type", ""))
         method = "terraform" if (r.get("in_code") or r.get("in_state")) else "AWS API"
@@ -54,13 +274,16 @@ def _handle_destroy(project_dir: str, resources: list[dict]):
 
 
 async def _run_destroy(project_dir: str, tf_resources: list[dict], aws_only: list[dict]):
-    from app.services.terraform_cli import stream_terraform
-
     if tf_resources:
         targets = [f"-target={r['id']}" for r in tf_resources]
+        args = ["destroy"] + targets
+
         console.print(f"\n[bold]Destroying {len(tf_resources)} terraform resource(s)...[/]\n")
-        async for line in stream_terraform(project_dir, ["destroy"] + targets):
-            console.print(line, end="", highlight=False)
+        output, code = await _stream_and_capture(project_dir, args)
+
+        if code != 0:
+            rerun = ["destroy", "-auto-approve", "-no-color"] + targets
+            await _ai_fix_loop(project_dir, "destroy", output, rerun)
 
     if aws_only:
         import aioboto3
@@ -85,24 +308,70 @@ async def _run_destroy(project_dir: str, tf_resources: list[dict], aws_only: lis
     console.print("\n[bold]Done.[/]")
 
 
+# --- Costs ---
+
+
+async def _load_costs(project_dir: str, rows: list[dict]) -> list[dict]:
+    """Fetch AWS costs and merge into existing resource rows."""
+    from app.services.aws_costs import get_costs_by_resource, get_costs_by_service, match_costs_to_resources
+
+    region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+        progress.add_task("Fetching AWS costs...", total=None)
+        resource_costs, service_costs = await asyncio.gather(
+            get_costs_by_resource({}, region, [], 30),
+            get_costs_by_service({}, 30),
+        )
+
+    if "_error" in resource_costs:
+        console.print(f"[error]Error fetching costs:[/] {resource_costs['_error']}")
+        return rows
+
+    match_costs_to_resources(resource_costs, service_costs, rows)
+    total = sum(r.get("cost_monthly") or 0 for r in rows)
+    console.print(f"[muted]  costs: ${total:,.2f}/mo across {sum(1 for r in rows if r.get('cost_monthly'))} resources[/]")
+    return rows
+
+
+# --- Helpers ---
+
+
+async def _stream_and_capture(project_dir: str, args: list[str]) -> tuple[str, int]:
+    """Stream terraform output to console and return (output, exit_code)."""
+    from app.services.terraform_cli import stream_terraform
+
+    lines = []
+    async for line in stream_terraform(project_dir, args):
+        console.print(line, end="", highlight=False)
+        lines.append(line)
+
+    output = "".join(lines)
+    # stream_terraform appends "[Exit code: N]\n" on non-zero exit
+    failed = "[Exit code:" in output
+    return output, 1 if failed else 0
+
+
+# --- Data loading ---
+
+
 async def _load_data(
     project_dir: str,
     service: str | None,
     no_cloud: bool,
-) -> tuple[list[dict], list[str]]:
-    from app.services.overview import compute_overview
+) -> tuple[list[dict], list[str], str]:
+    """Load terraform + cloud data. Returns (rows, warnings, plan_raw_output)."""
     from app.services.aws_inventory import scan_all
     from app.services.unified import merge_with_cloud
 
     region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
 
-    from app.services.terraform_cli import get_graph_dot, get_plan_json, get_state
+    from app.services.terraform_cli import get_plan_json, get_graph_dot
     from app.services.terraform_parser import parse_dot_graph, get_resource_locations
     from app.services.plan_cache import get_cached_plan, save_cached_plan
     from app.services.overview import parse_plan_resources, build_overview_rows, _rows_from_state, OverviewResult
-    from app.services.unified import derive_status
 
-    # Phase 1: Terraform — show progress per step
+    # Phase 1: Terraform
     result = OverviewResult([])
 
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
@@ -127,6 +396,7 @@ async def _load_data(
 
         if plan_data.get("error"):
             result.plan_error = plan_data["error"]
+            result.plan_raw_output = plan_data.get("raw_output", "")
             result.warnings.append(plan_data["error"])
 
         plan_resources = parse_plan_resources(plan_data)
@@ -174,4 +444,4 @@ async def _load_data(
     if service:
         rows = [r for r in rows if service.lower() in (r.get("service", "") or "").lower()]
 
-    return rows, overview.warnings
+    return rows, overview.warnings, overview.plan_raw_output

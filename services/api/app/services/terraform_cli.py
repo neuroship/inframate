@@ -80,7 +80,7 @@ async def get_plan_json(
     if code != 0:
         # Trim to last 500 chars to keep the most useful part of the error
         err_msg = output.strip()[-500:] if output else "unknown error"
-        return {"error": f"Plan failed: {err_msg}"}
+        return {"error": f"Plan failed: {err_msg}", "raw_output": output}
 
     output, _ = await run_terraform(
         workspace_path, ["show", "-json", plan_file], extra_env=extra_env
