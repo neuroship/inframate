@@ -4,3 +4,11 @@
 @plugin "flyonui";
 @plugin "@iconify/tailwind4";
 @source "flyonui/dist/index.js";
+
+@theme {
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+body {
+  font-family: var(--font-mono);
+}
