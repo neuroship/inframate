@@ -5,7 +5,7 @@ import re
 import sys
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 from rich.syntax import Syntax
 
 from app import config
@@ -16,6 +16,60 @@ FILE_PATTERN = re.compile(r'File:\s*(\S+)\s*\n```\w*\n(.*?)```', re.DOTALL)
 CMD_PATTERN = re.compile(r'```(?:bash|sh|shell)\n(.*?)```', re.DOTALL)
 
 
+def _needs_reinit(plan_output: str) -> bool:
+    """Check if plan error indicates terraform reinitialization is needed."""
+    lower = plan_output.lower()
+    return "reinitialization" in lower or ("terraform init" in lower and "backend" in lower)
+
+
+async def _ensure_init(project_dir: str):
+    """Run terraform init automatically if .terraform directory is missing."""
+    tf_dir = os.path.join(project_dir, ".terraform")
+    if os.path.isdir(tf_dir):
+        return
+
+    from app.services.terraform_cli import run_terraform
+
+    console.print("[muted]  terraform: not initialized, running init...[/]")
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+        progress.add_task("Running terraform init...", total=None)
+        output, code = await run_terraform(project_dir, ["init", "-input=false", "-no-color"])
+
+    if code == 0:
+        console.print("[muted]  terraform: initialized ✓[/]")
+    else:
+        console.print(f"  [error]terraform init failed:[/] {output.strip()[-200:]}")
+
+
+async def _handle_reinit(project_dir: str) -> bool:
+    """Prompt user and run terraform init with -reconfigure or -migrate-state. Returns True on success."""
+    from app.services.terraform_cli import run_terraform
+    from app.services.plan_cache import invalidate_cache
+
+    console.print()
+    console.print("  [warning]Backend configuration changed — reinitialization required.[/]")
+    choice = Prompt.ask(
+        "  Init mode",
+        choices=["reconfigure", "migrate-state", "skip"],
+        default="reconfigure",
+        console=console,
+    )
+    if choice == "skip":
+        return False
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+        progress.add_task(f"Running terraform init -{choice}...", total=None)
+        output, code = await run_terraform(project_dir, ["init", "-input=false", f"-{choice}", "-no-color"])
+
+    if code == 0:
+        console.print(f"  [success]✓ Reinitialized successfully[/]")
+        invalidate_cache(project_dir)
+        return True
+    else:
+        console.print(f"  [error]terraform init failed:[/] {output.strip()[-200:]}")
+        return False
+
+
 def run_resources(
     project_dir: str,
     status: str | None = None,
@@ -24,6 +78,13 @@ def run_resources(
     no_cloud: bool = False,
     credential_expiry: dict | None = None,
 ):
+    # Auto-init if .terraform is missing
+    try:
+        asyncio.run(_ensure_init(project_dir))
+    except KeyboardInterrupt:
+        console.print("\n[muted]Interrupted.[/]")
+        return
+
     try:
         rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
     except KeyboardInterrupt:
@@ -36,7 +97,15 @@ def run_resources(
         print(json_mod.dumps(rows, indent=2))
         return
 
-    # AI diagnosis flow if plan failed
+    # Handle reinit before falling to AI fix loop
+    if plan_raw_output and _needs_reinit(plan_raw_output):
+        try:
+            if asyncio.run(_handle_reinit(project_dir)):
+                rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+        except KeyboardInterrupt:
+            pass
+
+    # AI diagnosis flow if plan still failed
     if plan_raw_output:
         try:
             fixed = asyncio.run(_ai_fix_loop(project_dir, "plan", plan_raw_output, ["plan", "-no-color"]))

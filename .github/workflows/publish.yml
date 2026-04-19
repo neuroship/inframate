@@ -83,8 +83,6 @@ jobs:
           mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/inframate.rb << 'ENDFORMULA'
           class Inframate < Formula
-            include Language::Python::Virtualenv
-
             desc "CLI tool for managing Terraform infrastructure with a local web UI"
             homepage "https://github.com/neuroship/inframate"
             url "__URL__"
@@ -94,7 +92,8 @@ jobs:
             depends_on "python@3.13"
 
             def install
-              virtualenv_create(libexec, Formula["python@3.13"].opt_bin/"python3.13")
+              python = Formula["python@3.13"].opt_bin/"python3.13"
+              system python, "-m", "venv", libexec
               system libexec/"bin/pip", "install", "."
               bin.install_symlink libexec/"bin/inframate"
             end

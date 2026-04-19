@@ -68,7 +68,7 @@ def load_config(project_dir: str, overrides: dict | None = None):
 
 
 def get_ai_config() -> dict:
-    ai = _config.get("ai", {})
+    ai = _config.get("ai") or {}
 
     # Resolve provider preset
     provider_name = ai.get("provider", "")
@@ -86,7 +86,7 @@ def get_ai_config() -> dict:
 
 
 def get_terraform_config() -> dict:
-    tf = _config.get("terraform", {})
+    tf = _config.get("terraform") or {}
     return {
         "var_file": tf.get("var_file"),
         "backend_config": tf.get("backend_config"),
