@@ -1,5 +1,6 @@
 import argparse
 import os
+from importlib.metadata import version
 
 
 def _check_tf_files(project_dir: str):
@@ -17,6 +18,7 @@ def main():
         prog="inframate",
         description="Terraform infrastructure management tool. Runs the interactive resource browser by default.",
     )
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {version('inframate')}")
     parser.add_argument("--dir", type=str, default=".", help="Terraform project directory (default: cwd)")
     parser.add_argument("--service", type=str, default=None, help="Filter by service name")
     parser.add_argument("--no-cloud", action="store_true", help="Skip cloud scan (faster, no drift/unmanaged detection)")

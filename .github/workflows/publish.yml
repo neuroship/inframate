@@ -91,6 +91,10 @@ jobs:
 
             depends_on "python@3.13"
 
+            # Skip Homebrew relocation of native extensions in the venv
+            # (Rust-compiled .so files like jiter lack header padding for longer paths)
+            skip_clean "libexec"
+
             def install
               python = Formula["python@3.13"].opt_bin/"python3.13"
               system python, "-m", "venv", libexec
