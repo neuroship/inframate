@@ -3,7 +3,7 @@ Name: inframate
 Version: 0.1.0
 Summary: An all-in-one local interface for navigating, operating, and understanding your Terraform infrastructure
 Author: Amin Dorostanian
-License-Expression: MIT
+License-Expression: AGPL-3.0-only
 Project-URL: Homepage, https://github.com/neuroship/inframate
 Project-URL: Repository, https://github.com/neuroship/inframate
 Classifier: Programming Language :: Python :: 3

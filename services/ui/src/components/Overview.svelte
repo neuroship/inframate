@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from "svelte";
   import { createGrid, ModuleRegistry, AllCommunityModule, themeAlpine } from "ag-grid-community";
   import { AllEnterpriseModule } from "ag-grid-enterprise";
-  import { streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport, streamCloudScan, getVars, streamChatSession, getFile, updateFile } from "../lib/api.js";
+  import { streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport, streamCloudScan, getVars, streamChatSession, getFile, updateFile, getAwsStatus } from "../lib/api.js";
   import { lastActionError } from "../lib/stores.js";
   import { marked } from "marked";
   import ConfirmModal from "./ConfirmModal.svelte";
@@ -86,6 +86,9 @@
 
   // AWS status
   let awsOk = $state(null); // null=loading, true=ok, false=expired
+  let awsRemaining = $state(""); // "2h 30m", "expired", or ""
+  let awsExpiresAt = $state(null); // ISO string
+  let awsStatusInterval = null;
 
   // Search
   let searchText = $state("");
@@ -848,15 +851,31 @@
     );
   }
 
+  function updateAwsRemaining() {
+    if (!awsExpiresAt) { awsRemaining = ""; return; }
+    const ms = new Date(awsExpiresAt) - Date.now();
+    if (ms <= 0) { awsRemaining = "expired"; awsOk = false; return; }
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    awsRemaining = h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
   onMount(async () => {
+    // Fetch AWS credential status in background
+    getAwsStatus().then((status) => {
+      awsExpiresAt = status.expires_at;
+      awsOk = status.expires_at ? !status.remaining?.startsWith("expired") : true;
+      updateAwsRemaining();
+      awsStatusInterval = setInterval(updateAwsRemaining, 60000);
+    }).catch(() => { awsOk = null; });
+
     try {
-      // Fast load: cached plan + vars + aws status in parallel
+      // Fast load: cached plan + vars in parallel
       const [data, vars] = await Promise.all([
         getOverview(),
         getVars().catch(() => []),
       ]);
       varFiles = vars;
-      awsOk = true;
 
       if (data.length > 0) {
         computeStats(data);
@@ -864,7 +883,7 @@
         loading = false;
         // Background tasks
         await fetchCosts();
-        if (awsOk) handleCheckAws();
+        handleCheckAws();
       } else {
         // No cached plan — run fresh
         loading = false;
@@ -920,6 +939,7 @@
     observer.disconnect();
     gridApi?.destroy();
     if (diagController) diagController.abort();
+    if (awsStatusInterval) clearInterval(awsStatusInterval);
   });
 </script>
 
@@ -1001,6 +1021,9 @@
             <span class="icon-[tabler--cloud] size-3.5"></span>
             {#if awsOk}
               <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+              {#if awsRemaining}
+                <span>{awsRemaining}</span>
+              {/if}
             {:else}
               <span class="w-1.5 h-1.5 rounded-full bg-error"></span>
               <span class="text-error">expired</span>

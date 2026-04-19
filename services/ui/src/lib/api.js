@@ -104,6 +104,12 @@ export function streamAwsDelete(resources, onData, onDone) {
   return streamSSE(`${BASE}/terraform/aws-delete`, "POST", { resources }, onData, onDone);
 }
 
+// --- AWS ---
+
+export async function getAwsStatus() {
+  return request("/aws/status");
+}
+
 // --- AI ---
 
 export function streamChat(message, context, onData, onDone) {

@@ -51,8 +51,9 @@ def main():
     _check_tf_files(project_dir)
 
     # Backend reachability check (skip for ui)
+    credential_expiry = None
     if args.command != "serve":
-        from app.services.backend_check import check_backend
+        from app.services.backend_check import check_backend, get_credential_expiry
         ok, errors = check_backend(project_dir)
         if not ok:
             print("Backend authentication failed:\n")
@@ -60,6 +61,7 @@ def main():
                 print(f"  - {err}")
             print()
             raise SystemExit(1)
+        credential_expiry = get_credential_expiry()
 
     # Dispatch
     try:
@@ -68,7 +70,7 @@ def main():
             run_ui(project_dir, config.get_port(), args.no_browser)
         else:
             from app.cli_commands.resources import run_resources
-            run_resources(project_dir, status=args.status, service=args.service, json_output=args.json_output, no_cloud=args.no_cloud)
+            run_resources(project_dir, status=args.status, service=args.service, json_output=args.json_output, no_cloud=args.no_cloud, credential_expiry=credential_expiry)
     except KeyboardInterrupt:
         print()
 

@@ -23,6 +23,15 @@ def create_app(project_dir: str) -> FastAPI:
     def project_info():
         return {"project_dir": config.PROJECT_DIR}
 
+    @app.get("/api/aws/status")
+    def aws_status():
+        from app.services.backend_check import get_credential_expiry, format_time_remaining
+        expiry = get_credential_expiry()
+        return {
+            **expiry,
+            "remaining": format_time_remaining(expiry.get("expires_at")),
+        }
+
     # Serve bundled UI (production)
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir():

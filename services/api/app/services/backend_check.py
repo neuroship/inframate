@@ -1,10 +1,15 @@
 """Detect cloud providers from .tf files and verify credentials."""
 
-import asyncio
+import glob
+import json
 import os
+import shutil
 import subprocess
+from datetime import datetime, timezone
 
 import hcl2
+
+from app import config
 
 
 PROVIDER_CHECKS = {
@@ -73,10 +78,50 @@ def detect_providers(project_dir: str) -> set[str]:
     return providers
 
 
+def _check_terraform_binary() -> str | None:
+    """Check terraform binary exists and is runnable. Returns error string or None."""
+    tf_bin = config.TERRAFORM_BINARY
+    if not shutil.which(tf_bin):
+        return f"terraform binary not found: '{tf_bin}'. Install terraform or set terraform_binary in config."
+    try:
+        result = subprocess.run(
+            [tf_bin, "version"],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return f"terraform binary failed: {result.stderr.decode().strip()}"
+    except subprocess.TimeoutExpired:
+        return "terraform version check timed out."
+    return None
+
+
+def _check_terraform_init(project_dir: str) -> str | None:
+    """Check terraform has been initialized. Returns error string or None."""
+    tf_dir = os.path.join(project_dir, ".terraform")
+    if not os.path.isdir(tf_dir):
+        return f"terraform not initialized. Run: cd {project_dir} && terraform init"
+    return None
+
+
 def check_backend(project_dir: str) -> tuple[bool, list[str]]:
-    """Detect providers and verify credentials. Returns (ok, errors)."""
-    providers = detect_providers(project_dir)
+    """Check terraform binary, init status, and provider credentials. Returns (ok, errors)."""
     errors = []
+
+    # 1. Terraform binary
+    tf_err = _check_terraform_binary()
+    if tf_err:
+        errors.append(tf_err)
+        return (False, errors)
+
+    # 2. Terraform init
+    init_err = _check_terraform_init(project_dir)
+    if init_err:
+        errors.append(init_err)
+        return (False, errors)
+
+    # 3. Provider credentials
+    providers = detect_providers(project_dir)
 
     for provider in sorted(providers):
         check = PROVIDER_CHECKS.get(provider)
@@ -87,7 +132,7 @@ def check_backend(project_dir: str) -> tuple[bool, list[str]]:
             result = subprocess.run(
                 check["cmd"],
                 capture_output=True,
-                timeout=5,
+                timeout=10,
             )
             if result.returncode != 0:
                 errors.append(f"{provider}: credentials not valid. {check['fix']}")
@@ -97,3 +142,81 @@ def check_backend(project_dir: str) -> tuple[bool, list[str]]:
             errors.append(f"{provider}: credential check timed out.")
 
     return (len(errors) == 0, errors)
+
+
+def _parse_expiry(s: str) -> datetime | None:
+    """Parse ISO datetime string to timezone-aware datetime."""
+    if not s:
+        return None
+    try:
+        # Handle both "2026-04-09T16:46:02Z" and "2026-04-09T16:46:02+00:00"
+        s = s.replace("Z", "+00:00")
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def get_credential_expiry() -> dict:
+    """Detect AWS credential expiry from SSO and CLI cache files.
+
+    Returns {"expires_at": ISO string or None, "type": "sso"|"session"|"static"}.
+    """
+    now = datetime.now(timezone.utc)
+    best_expiry = None
+    cred_type = "static"
+
+    # 1. SSO cache — files with accessToken are actual session tokens
+    sso_dir = os.path.expanduser("~/.aws/sso/cache")
+    if os.path.isdir(sso_dir):
+        for path in glob.glob(os.path.join(sso_dir, "*.json")):
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                if "accessToken" not in data:
+                    continue
+                exp = _parse_expiry(data.get("expiresAt", ""))
+                if exp and exp > now:
+                    if best_expiry is None or exp < best_expiry:
+                        best_expiry = exp
+                        cred_type = "sso"
+            except Exception:
+                continue
+
+    # 2. CLI cache — assumed role / SSO role credentials
+    cli_dir = os.path.expanduser("~/.aws/cli/cache")
+    if os.path.isdir(cli_dir):
+        for path in glob.glob(os.path.join(cli_dir, "*.json")):
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                creds = data.get("Credentials", {})
+                exp = _parse_expiry(creds.get("Expiration", ""))
+                if exp and exp > now:
+                    if best_expiry is None or exp < best_expiry:
+                        best_expiry = exp
+                        cred_type = data.get("ProviderType", "session") or "session"
+            except Exception:
+                continue
+
+    return {
+        "expires_at": best_expiry.isoformat() if best_expiry else None,
+        "type": cred_type,
+    }
+
+
+def format_time_remaining(expires_at_iso: str | None) -> str:
+    """Format expiry as human-readable remaining time string."""
+    if not expires_at_iso:
+        return ""
+    exp = _parse_expiry(expires_at_iso)
+    if not exp:
+        return ""
+    delta = exp - datetime.now(timezone.utc)
+    total_seconds = int(delta.total_seconds())
+    if total_seconds <= 0:
+        return "expired"
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes = remainder // 60
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"

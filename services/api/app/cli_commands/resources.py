@@ -22,6 +22,7 @@ def run_resources(
     service: str | None = None,
     json_output: bool = False,
     no_cloud: bool = False,
+    credential_expiry: dict | None = None,
 ):
     try:
         rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
@@ -52,7 +53,7 @@ def run_resources(
     show_costs = False
     while True:
         from app.cli_commands.resources_tui import ResourcesApp
-        app = ResourcesApp(rows, warnings=warnings, show_costs=show_costs)
+        app = ResourcesApp(rows, warnings=warnings, show_costs=show_costs, credential_expiry=credential_expiry)
         result = app.run()
 
         if not isinstance(result, tuple):

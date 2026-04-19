@@ -313,15 +313,17 @@ class ResourcesApp(App):
         Binding("escape", "close_search", "Close search", show=False, priority=True),
     ]
 
-    def __init__(self, rows: list[dict], warnings: list[str] | None = None, show_costs: bool = False):
+    def __init__(self, rows: list[dict], warnings: list[str] | None = None, show_costs: bool = False, credential_expiry: dict | None = None):
         super().__init__()
         self.all_rows = rows
         self._warnings = warnings or []
         self.show_costs = show_costs
+        self.credential_expiry = credential_expiry
         self.status_filter = "all"
         self.action_filter = "all"
         self.search_query = ""
         self.selected_ids: set[str] = set()
+        self._detail_open = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -337,7 +339,7 @@ class ResourcesApp(App):
 
     def on_mount(self) -> None:
         self.title = "inframate"
-        self.sub_title = f"{len(self.all_rows)} resources"
+        self._update_subtitle()
 
         if self._warnings:
             w = self.query_one("#warnings", Static)
@@ -351,7 +353,21 @@ class ResourcesApp(App):
             "[dim]/[/]=search [dim]$[/]=costs [dim]F5[/]=refresh [dim]space[/]=select [dim]enter[/]=detail [dim]r[/]=apply [dim]x[/]=destroy"
         ))
 
+        if self.credential_expiry and self.credential_expiry.get("expires_at"):
+            self.set_interval(60, self._update_subtitle)
+
         self._rebuild()
+
+    def _update_subtitle(self) -> None:
+        parts = [f"{len(self.all_rows)} resources"]
+        if self.credential_expiry and self.credential_expiry.get("expires_at"):
+            from app.services.backend_check import format_time_remaining
+            remaining = format_time_remaining(self.credential_expiry["expires_at"])
+            if remaining == "expired":
+                parts.append("⚠ token expired")
+            elif remaining:
+                parts.append(f"token: {remaining}")
+        self.sub_title = " │ ".join(parts)
 
     def _filtered_rows(self) -> list[dict]:
         rows = self.all_rows
@@ -416,6 +432,8 @@ class ResourcesApp(App):
         self.exit(result=("apply", selected))
 
     def action_show_detail(self) -> None:
+        if self._detail_open:
+            return
         tree = self.query_one("#tree", TreeWidget)
         node = tree.cursor_node
         if not node:
@@ -423,7 +441,11 @@ class ResourcesApp(App):
         if node.data is None:
             node.toggle()
             return
-        self.push_screen(ResourceDetailScreen(node.data))
+        self._detail_open = True
+        self.push_screen(ResourceDetailScreen(node.data), callback=self._on_detail_closed)
+
+    def _on_detail_closed(self, _result=None) -> None:
+        self._detail_open = False
 
     def action_refresh(self) -> None:
         self.exit(result=("refresh", []))
