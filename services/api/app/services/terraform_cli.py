@@ -6,11 +6,33 @@ from collections.abc import AsyncGenerator
 from app import config
 
 
+_VAR_FILE_COMMANDS = {"plan", "apply", "destroy", "import"}
+
+
 def _build_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
     env = {**os.environ}
     if extra_env:
         env.update(extra_env)
     return env
+
+
+def _apply_config_defaults(cmd: list[str], args: list[str], var_file: str | None = None):
+    """Apply var_file and backend_config from config to a terraform command."""
+    tf_config = config.get_terraform_config()
+    if not args:
+        return
+
+    command = args[0]
+
+    # var_file: explicit param > config, only for relevant commands
+    effective_var_file = var_file or tf_config.get("var_file")
+    if effective_var_file and command in _VAR_FILE_COMMANDS and "-var-file" not in args:
+        cmd.extend(["-var-file", effective_var_file])
+
+    # backend_config: only for init
+    backend_config = tf_config.get("backend_config")
+    if backend_config and command == "init" and not any(a.startswith("-backend-config") for a in args):
+        cmd.append(f"-backend-config={backend_config}")
 
 
 async def stream_terraform(
@@ -20,8 +42,7 @@ async def stream_terraform(
     extra_env: dict[str, str] | None = None,
 ) -> AsyncGenerator[str, None]:
     cmd = [config.TERRAFORM_BINARY] + args
-    if var_file:
-        cmd.extend(["-var-file", var_file])
+    _apply_config_defaults(cmd, args, var_file)
 
     # Auto-approve for apply/destroy
     if args and args[0] in ("apply", "destroy") and "-auto-approve" not in args:
@@ -53,8 +74,7 @@ async def run_terraform(
     extra_env: dict[str, str] | None = None,
 ) -> tuple[str, int]:
     cmd = [config.TERRAFORM_BINARY] + args
-    if var_file:
-        cmd.extend(["-var-file", var_file])
+    _apply_config_defaults(cmd, args, var_file)
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -75,10 +95,8 @@ async def get_plan_json(
 ) -> dict:
     plan_file = os.path.join(workspace_path, ".inframate-plan.tfplan")
     args = ["plan", "-input=false", "-lock-timeout=30s", "-out", plan_file, "-no-color"]
-    if var_file:
-        args.extend(["-var-file", var_file])
 
-    output, code = await run_terraform(workspace_path, args, extra_env=extra_env)
+    output, code = await run_terraform(workspace_path, args, var_file=var_file, extra_env=extra_env)
     if code != 0:
         # Trim to last 500 chars to keep the most useful part of the error
         err_msg = output.strip()[-500:] if output else "unknown error"
@@ -102,9 +120,9 @@ async def stream_plan_with_output(
 ) -> dict:
     """Run terraform plan, call on_line(text) for each output line, return plan JSON."""
     plan_file = os.path.join(workspace_path, ".inframate-plan.tfplan")
-    cmd = [config.TERRAFORM_BINARY, "plan", "-input=false", "-lock-timeout=30s", "-out", plan_file, "-no-color"]
-    if var_file:
-        cmd.extend(["-var-file", var_file])
+    args = ["plan", "-input=false", "-lock-timeout=30s", "-out", plan_file, "-no-color"]
+    cmd = [config.TERRAFORM_BINARY] + args
+    _apply_config_defaults(cmd, args, var_file)
 
     process = await asyncio.create_subprocess_exec(
         *cmd,

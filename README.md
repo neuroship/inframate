@@ -103,6 +103,11 @@ ai:
 #   endpoint: http://localhost:11434/v1
 #   api_token: ollama
 #   model: llama3
+
+# Custom var-file and backend config (applied automatically)
+terraform:
+  var_file: env/dev/terraform.tfvars         # used in plan, apply, destroy
+  backend_config: env/dev/backend.hcl        # used in init
 ```
 
 Provider defaults:

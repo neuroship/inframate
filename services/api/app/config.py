@@ -85,6 +85,14 @@ def get_ai_config() -> dict:
     }
 
 
+def get_terraform_config() -> dict:
+    tf = _config.get("terraform", {})
+    return {
+        "var_file": tf.get("var_file"),
+        "backend_config": tf.get("backend_config"),
+    }
+
+
 def get_port() -> int:
     return int(_config.get("port", 8000))
 
