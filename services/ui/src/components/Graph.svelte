@@ -7,7 +7,7 @@
   ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
   const gridTheme = themeAlpine.withParams({
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+    fontFamily: "'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace",
     backgroundColor: "transparent",
     headerBackgroundColor: "rgba(255,255,255,0.03)",
     oddRowBackgroundColor: "rgba(255,255,255,0.01)",

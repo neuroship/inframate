@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: inframate
-Version: 0.1.0
+Version: 0.0.6
 Summary: An all-in-one local interface for navigating, operating, and understanding your Terraform infrastructure
 Author: Amin Dorostanian
 License-Expression: AGPL-3.0-only

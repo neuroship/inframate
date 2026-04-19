@@ -141,7 +141,7 @@
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
   const darkTheme = themeAlpine.withParams({
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+    fontFamily: "'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace",
     backgroundColor: "transparent",
     headerBackgroundColor: "rgba(255,255,255,0.03)",
     oddRowBackgroundColor: "rgba(255,255,255,0.01)",
@@ -157,7 +157,7 @@
   });
 
   const lightTheme = themeAlpine.withParams({
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+    fontFamily: "'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace",
     backgroundColor: "transparent",
     headerBackgroundColor: "rgba(0,0,0,0.03)",
     oddRowBackgroundColor: "rgba(0,0,0,0.02)",

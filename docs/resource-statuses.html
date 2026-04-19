@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inframate - Resource Statuses</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      padding: 48px 24px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      font-size: 0.875rem;
+      margin-bottom: 48px;
+    }
+
+    /* --- Diagram Section --- */
+    .diagram {
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 48px;
+    }
+
+    .diagram h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+      color: #cbd5e1;
+    }
+
+    .venn-container {
+      display: flex;
+      justify-content: center;
+      padding: 16px 0;
+    }
+
+    .venn-svg text {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* --- Status Cards --- */
+    .section-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 48px;
+    }
+
+    .status-card {
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      align-items: center;
+      gap: 16px;
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 10px;
+      padding: 16px 20px;
+      transition: border-color 0.15s;
+    }
+
+    .status-card:hover {
+      border-color: #3a3d4a;
+    }
+
+    .status-dot {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .status-info h3 {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .status-info p {
+      font-size: 0.8125rem;
+      color: #94a3b8;
+    }
+
+    .presence-pills {
+      display: flex;
+      gap: 6px;
+    }
+
+    .pill {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .pill-on  { opacity: 1; }
+    .pill-off { opacity: 0.25; }
+
+    .pill-code  { background: #8b5cf620; color: #a78bfa; border: 1px solid #8b5cf630; }
+    .pill-state { background: #3b82f620; color: #60a5fa; border: 1px solid #3b82f630; }
+    .pill-cloud { background: #06b6d420; color: #22d3ee; border: 1px solid #06b6d430; }
+
+    /* Status-specific colors */
+    .dot-managed   { background: #10b98118; color: #10b981; }
+    .dot-pending   { background: #6366f118; color: #6366f1; }
+    .dot-drift     { background: #f59e0b18; color: #f59e0b; }
+    .dot-unmanaged { background: #f9731618; color: #f97316; }
+    .dot-orphaned  { background: #ef444418; color: #ef4444; }
+
+    .name-managed   { color: #34d399; }
+    .name-pending   { color: #818cf8; }
+    .name-drift     { color: #fbbf24; }
+    .name-unmanaged { color: #fb923c; }
+    .name-orphaned  { color: #f87171; }
+
+    /* --- Actions Section --- */
+    .action-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+
+    .action-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+    }
+
+    .action-icon {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* --- Flow Section --- */
+    .flow-container {
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 48px;
+    }
+
+    .flow-container h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+      color: #cbd5e1;
+    }
+
+    .flow-svg text {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* --- Presence Legend --- */
+    .presence-legend {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 48px;
+      flex-wrap: wrap;
+    }
+
+    .presence-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8125rem;
+    }
+
+    .presence-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    /* --- Table --- */
+    .truth-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      margin-bottom: 16px;
+      background: #1a1d27;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #2a2d3a;
+    }
+
+    .truth-table th {
+      background: #22253a;
+      padding: 10px 16px;
+      text-align: left;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      font-size: 0.6875rem;
+      letter-spacing: 0.05em;
+    }
+
+    .truth-table td {
+      padding: 10px 16px;
+      border-top: 1px solid #2a2d3a;
+    }
+
+    .truth-table tr:hover td {
+      background: #1e2130;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-managed   { background: #10b98118; color: #34d399; }
+    .badge-pending   { background: #6366f118; color: #818cf8; }
+    .badge-drift     { background: #f59e0b18; color: #fbbf24; }
+    .badge-unmanaged { background: #f9731618; color: #fb923c; }
+    .badge-orphaned  { background: #ef444418; color: #f87171; }
+
+    .footer {
+      text-align: center;
+      color: #475569;
+      font-size: 0.75rem;
+      margin-top: 48px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <h1>Inframate Resource Statuses</h1>
+    <p class="subtitle">How inframate determines the state of your infrastructure resources</p>
+
+    <!-- Venn Diagram -->
+    <div class="diagram">
+      <h2>Three Sources of Truth</h2>
+      <p class="subtitle" style="margin-bottom: 20px;">Every resource is checked against three locations. The overlap determines its status.</p>
+
+      <div class="presence-legend">
+        <div class="presence-item">
+          <div class="presence-dot" style="background: #8b5cf6;"></div>
+          <span><strong style="color:#a78bfa;">Code</strong> &mdash; declared in .tf files</span>
+        </div>
+        <div class="presence-item">
+          <div class="presence-dot" style="background: #3b82f6;"></div>
+          <span><strong style="color:#60a5fa;">State</strong> &mdash; tracked in terraform.tfstate</span>
+        </div>
+        <div class="presence-item">
+          <div class="presence-dot" style="background: #06b6d4;"></div>
+          <span><strong style="color:#22d3ee;">Cloud</strong> &mdash; exists in AWS</span>
+        </div>
+      </div>
+
+      <div class="venn-container">
+        <svg class="venn-svg" viewBox="0 0 520 340" width="520" height="340">
+          <!-- Code circle -->
+          <circle cx="200" cy="160" r="120" fill="#8b5cf610" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <!-- State circle -->
+          <circle cx="310" cy="160" r="120" fill="#3b82f610" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <!-- Cloud circle -->
+          <circle cx="255" cy="250" r="120" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+          <!-- Labels for circles -->
+          <text x="140" y="95" fill="#a78bfa" font-size="12" font-weight="600">CODE</text>
+          <text x="330" y="95" fill="#60a5fa" font-size="12" font-weight="600">STATE</text>
+          <text x="235" y="335" fill="#22d3ee" font-size="12" font-weight="600">CLOUD</text>
+
+          <!-- Pending: code only -->
+          <text x="145" y="170" fill="#818cf8" font-size="12" font-weight="700">Pending</text>
+          <text x="140" y="186" fill="#64748b" font-size="9">not yet applied</text>
+
+          <!-- Orphaned: state only -->
+          <text x="340" y="170" fill="#f87171" font-size="12" font-weight="700">Orphaned</text>
+          <text x="340" y="186" fill="#64748b" font-size="9">code removed</text>
+
+          <!-- Unmanaged: cloud only -->
+          <text x="215" y="310" fill="#fb923c" font-size="12" font-weight="700">Unmanaged</text>
+          <text x="218" y="326" fill="#64748b" font-size="9">not in terraform</text>
+
+          <!-- Managed: code + state + cloud -->
+          <text x="222" y="190" fill="#34d399" font-size="13" font-weight="700">Managed</text>
+          <text x="218" y="206" fill="#64748b" font-size="9">fully tracked</text>
+
+          <!-- Drift: code + state, not cloud -->
+          <text x="230" y="118" fill="#fbbf24" font-size="11" font-weight="700">Drift</text>
+          <text x="215" y="132" fill="#64748b" font-size="9">missing in cloud</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Status Cards -->
+    <h2 class="section-title">Statuses</h2>
+    <div class="status-grid">
+
+      <div class="status-card">
+        <div class="status-dot dot-managed">&#10003;</div>
+        <div class="status-info">
+          <h3 class="name-managed">Managed</h3>
+          <p>Resource is in your code, tracked in state, and exists in the cloud. Everything is in sync.</p>
+        </div>
+        <div class="presence-pills">
+          <span class="pill pill-code pill-on">Code</span>
+          <span class="pill pill-state pill-on">State</span>
+          <span class="pill pill-cloud pill-on">Cloud</span>
+        </div>
+      </div>
+
+      <div class="status-card">
+        <div class="status-dot dot-pending">+</div>
+        <div class="status-info">
+          <h3 class="name-pending">Pending</h3>
+          <p>Resource is declared in code but hasn't been applied yet. Run <code>terraform apply</code> to create it.</p>
+        </div>
+        <div class="presence-pills">
+          <span class="pill pill-code pill-on">Code</span>
+          <span class="pill pill-state pill-off">State</span>
+          <span class="pill pill-cloud pill-off">Cloud</span>
+        </div>
+      </div>
+
+      <div class="status-card">
+        <div class="status-dot dot-drift">&#8800;</div>
+        <div class="status-info">
+          <h3 class="name-drift">Drift</h3>
+          <p>Resource is in code and state but missing from the cloud. It was deleted outside of Terraform.</p>
+        </div>
+        <div class="presence-pills">
+          <span class="pill pill-code pill-on">Code</span>
+          <span class="pill pill-state pill-on">State</span>
+          <span class="pill pill-cloud pill-off">Cloud</span>
+        </div>
+      </div>
+
+      <div class="status-card">
+        <div class="status-dot dot-unmanaged">?</div>
+        <div class="status-info">
+          <h3 class="name-unmanaged">Unmanaged</h3>
+          <p>Resource exists in the cloud but isn't tracked by Terraform. Import it or leave it as-is.</p>
+        </div>
+        <div class="presence-pills">
+          <span class="pill pill-code pill-off">Code</span>
+          <span class="pill pill-state pill-off">State</span>
+          <span class="pill pill-cloud pill-on">Cloud</span>
+        </div>
+      </div>
+
+      <div class="status-card">
+        <div class="status-dot dot-orphaned">&#215;</div>
+        <div class="status-info">
+          <h3 class="name-orphaned">Orphaned</h3>
+          <p>Resource is in state but its code was removed. Next apply will destroy it.</p>
+        </div>
+        <div class="presence-pills">
+          <span class="pill pill-code pill-off">Code</span>
+          <span class="pill pill-state pill-on">State</span>
+          <span class="pill pill-cloud pill-off">Cloud</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Actions -->
+    <h2 class="section-title">Planned Actions</h2>
+    <p class="subtitle" style="margin-bottom: 16px;">When Terraform plans changes, each resource gets an action label.</p>
+    <div class="action-row">
+      <div class="action-chip">
+        <div class="action-icon" style="background: #6366f1;"></div>
+        <span><strong style="color:#818cf8;">Create</strong> &mdash; will be provisioned</span>
+      </div>
+      <div class="action-chip">
+        <div class="action-icon" style="background: #f59e0b;"></div>
+        <span><strong style="color:#fbbf24;">Update</strong> &mdash; will be modified in-place</span>
+      </div>
+      <div class="action-chip">
+        <div class="action-icon" style="background: #ef4444;"></div>
+        <span><strong style="color:#f87171;">Destroy</strong> &mdash; will be deleted</span>
+      </div>
+      <div class="action-chip">
+        <div class="action-icon" style="background: #ec4899;"></div>
+        <span><strong style="color:#f472b6;">Replace</strong> &mdash; destroy + create</span>
+      </div>
+      <div class="action-chip">
+        <div class="action-icon" style="background: #10b981;"></div>
+        <span><strong style="color:#34d399;">No-op</strong> &mdash; no changes needed</span>
+      </div>
+    </div>
+
+    <!-- Status Reference Table -->
+    <h2 class="section-title" style="margin-top: 48px;">Status Reference</h2>
+    <p class="subtitle" style="margin-bottom: 16px;">Each status at a glance with its presence pattern.</p>
+
+    <table class="truth-table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Presence</th>
+          <th>What it means</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="status-badge badge-managed">Managed</span></td>
+          <td>
+            <span class="pill pill-code pill-on" style="margin-right:2px;">Code</span>
+            <span class="pill pill-state pill-on" style="margin-right:2px;">State</span>
+            <span class="pill pill-cloud pill-on">Cloud</span>
+          </td>
+          <td>Fully in sync &mdash; defined in code, tracked in state, exists in cloud</td>
+        </tr>
+        <tr>
+          <td><span class="status-badge badge-pending">Pending</span></td>
+          <td>
+            <span class="pill pill-code pill-on" style="margin-right:2px;">Code</span>
+            <span class="pill pill-state pill-off" style="margin-right:2px;">State</span>
+            <span class="pill pill-cloud pill-off">Cloud</span>
+          </td>
+          <td>Declared in code but not yet applied</td>
+        </tr>
+        <tr>
+          <td><span class="status-badge badge-drift">Drift</span></td>
+          <td>
+            <span class="pill pill-code pill-on" style="margin-right:2px;">Code</span>
+            <span class="pill pill-state pill-on" style="margin-right:2px;">State</span>
+            <span class="pill pill-cloud pill-off">Cloud</span>
+          </td>
+          <td>In code and state, but missing or changed in cloud</td>
+        </tr>
+        <tr>
+          <td><span class="status-badge badge-unmanaged">Unmanaged</span></td>
+          <td>
+            <span class="pill pill-code pill-off" style="margin-right:2px;">Code</span>
+            <span class="pill pill-state pill-off" style="margin-right:2px;">State</span>
+            <span class="pill pill-cloud pill-on">Cloud</span>
+          </td>
+          <td>Exists in cloud but not managed by Terraform</td>
+        </tr>
+        <tr>
+          <td><span class="status-badge badge-orphaned">Orphaned</span></td>
+          <td>
+            <span class="pill pill-code pill-off" style="margin-right:2px;">Code</span>
+            <span class="pill pill-state pill-on" style="margin-right:2px;">State</span>
+            <span class="pill pill-cloud pill-off">Cloud</span>
+          </td>
+          <td>In Terraform state but code definition was removed</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 48px; border-left: 2px solid #334155; padding-left: 12px;">
+      When cloud scan is skipped (<code>--no-cloud</code>), resources in code + state are assumed <span class="status-badge badge-managed" style="font-size:0.6875rem;">Managed</span>, and drift / unmanaged detection is unavailable.
+    </p>
+
+    <!-- Lifecycle Flow -->
+    <div class="flow-container">
+      <h2>Resource Lifecycle</h2>
+      <p class="subtitle" style="margin-bottom: 20px;">The typical journey of a resource through inframate statuses.</p>
+
+      <svg class="flow-svg" viewBox="0 0 880 100" width="100%" height="100">
+        <!-- Arrows -->
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6" fill="#475569"/>
+          </marker>
+        </defs>
+
+        <!-- Nodes -->
+        <rect x="0" y="28" width="120" height="44" rx="8" fill="#6366f118" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="60" y="55" fill="#818cf8" font-size="13" font-weight="600" text-anchor="middle">Pending</text>
+
+        <line x1="124" y1="50" x2="175" y2="50" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="149" y="40" fill="#64748b" font-size="8" text-anchor="middle">apply</text>
+
+        <rect x="180" y="28" width="120" height="44" rx="8" fill="#10b98118" stroke="#10b981" stroke-width="1.5"/>
+        <text x="240" y="55" fill="#34d399" font-size="13" font-weight="600" text-anchor="middle">Managed</text>
+
+        <line x1="304" y1="50" x2="355" y2="50" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="329" y="40" fill="#64748b" font-size="8" text-anchor="middle">cloud delete</text>
+
+        <rect x="360" y="28" width="120" height="44" rx="8" fill="#f59e0b18" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="420" y="55" fill="#fbbf24" font-size="13" font-weight="600" text-anchor="middle">Drift</text>
+
+        <line x1="484" y1="50" x2="535" y2="50" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="509" y="40" fill="#64748b" font-size="8" text-anchor="middle">remove code</text>
+
+        <rect x="540" y="28" width="120" height="44" rx="8" fill="#ef444418" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="600" y="55" fill="#f87171" font-size="13" font-weight="600" text-anchor="middle">Orphaned</text>
+
+        <line x1="664" y1="50" x2="715" y2="50" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="689" y="40" fill="#64748b" font-size="8" text-anchor="middle">apply</text>
+
+        <rect x="720" y="28" width="120" height="44" rx="8" fill="#47556920" stroke="#475569" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="780" y="55" fill="#64748b" font-size="13" font-weight="600" text-anchor="middle">Destroyed</text>
+      </svg>
+    </div>
+
+    <p class="footer">inframate &mdash; interactive Terraform infrastructure management</p>
+  </div>
+</body>
+</html>
