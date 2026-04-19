@@ -27,8 +27,8 @@ app/services/terraform_parser.py
 app/services/unified.py
 app/services/version_check.py
 app/static/index.html
+app/static/assets/index-BH5OQiaH.js
 app/static/assets/index-BZzkbrJq.css
-app/static/assets/index-DWX8WrAv.js
 inframate.egg-info/PKG-INFO
 inframate.egg-info/SOURCES.txt
 inframate.egg-info/dependency_links.txt
