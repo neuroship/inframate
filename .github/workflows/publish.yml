@@ -49,9 +49,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version from tag
+      - name: Get version from pyproject.toml
         id: meta
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('services/api/pyproject.toml','rb'))['project']['version'])")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Get SHA from PyPI
         id: pypi
