@@ -14,4 +14,3 @@ coverage/
 build/
 *.log
 *.tgz
-package-lock.json
