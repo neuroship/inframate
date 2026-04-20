@@ -76,7 +76,7 @@ jobs:
       - name: Generate resource blocks
         run: |
           pip install setuptools homebrew-pypi-poet
-          pip install inframate==${{ steps.meta.outputs.version }}
+          pip install ${{ steps.pypi.outputs.url }}
           poet inframate > /tmp/resources.txt
 
       - uses: actions/checkout@v4
