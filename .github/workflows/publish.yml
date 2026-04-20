@@ -49,6 +49,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Get version from pyproject.toml
         id: meta
         run: |
@@ -69,37 +73,42 @@ jobs:
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "sha256=$SHA" >> $GITHUB_OUTPUT
 
+      - name: Generate resource blocks
+        run: |
+          pip install homebrew-pypi-poet
+          pip install inframate==${{ steps.meta.outputs.version }}
+          poet inframate > /tmp/resources.txt
+
       - uses: actions/checkout@v4
         with:
           repository: neuroship/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
 
-      - name: Update formula
+      - name: Generate formula
         env:
           TARBALL_URL: ${{ steps.pypi.outputs.url }}
           TARBALL_SHA: ${{ steps.pypi.outputs.sha256 }}
         run: |
           mkdir -p homebrew-tap/Formula
-          cat > homebrew-tap/Formula/inframate.rb << 'ENDFORMULA'
+          cat > homebrew-tap/Formula/inframate.rb << ENDFORMULA
           class Inframate < Formula
+            include Language::Python::Virtualenv
+
             desc "CLI tool for managing Terraform infrastructure with a local web UI"
             homepage "https://github.com/neuroship/inframate"
-            url "__URL__"
-            sha256 "__SHA__"
+            url "${TARBALL_URL}"
+            sha256 "${TARBALL_SHA}"
             license "AGPL-3.0-only"
 
             depends_on "python@3.13"
 
-            # Skip Homebrew relocation of native extensions in the venv
-            # (Rust-compiled .so files like jiter lack header padding for longer paths)
             skip_clean "libexec"
 
+          $(sed 's/^/  /' /tmp/resources.txt)
+
             def install
-              python = Formula["python@3.13"].opt_bin/"python3.13"
-              system python, "-m", "venv", libexec
-              system libexec/"bin/pip", "install", "."
-              bin.install_symlink libexec/"bin/inframate"
+              virtualenv_install_with_resources
             end
 
             test do
@@ -107,7 +116,6 @@ jobs:
             end
           end
           ENDFORMULA
-          sed -i "s|__URL__|${TARBALL_URL}|; s|__SHA__|${TARBALL_SHA}|" homebrew-tap/Formula/inframate.rb
 
       - name: Push to tap
         working-directory: homebrew-tap
