@@ -82,11 +82,16 @@ Each resource also shows three indicators: **S** (in state), **C** (in code), **
 | `Space` | Toggle resource selection |
 | `r` | Apply (all planned changes, or selected only) |
 | `x` | Destroy selected resources |
+| `s` | AI plan summary (prioritized change overview) |
 | `$` | Load and display AWS costs |
 | `F5` | Refresh (re-read terraform + cloud data) |
 | `q` | Quit |
 
 When apply or destroy fails, inframate streams AI diagnosis, suggests file changes and commands (e.g. `terraform import`, `terraform state rm`), and offers to apply fixes — in a loop until the issue is resolved.
+
+### AI plan summary
+
+Press `s` in the TUI (or click **Summarize** in the web UI) to get an AI-generated summary of all planned changes, ranked from most critical (destroys, replacements) to least (creates, minor updates). Requires AI to be configured.
 
 ## Configuration
 

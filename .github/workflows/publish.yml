@@ -80,7 +80,10 @@ jobs:
           import importlib.metadata, json, urllib.request
 
           SKIP = {"inframate", "pip", "setuptools", "wheel"}
+          # Rust/maturin packages — installed as wheels in the formula
+          RUST_PKGS = {"jiter", "pydantic-core", "pydantic_core", "watchfiles"}
           seen = set()
+          rust_pins = []
 
           for dist in sorted(importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower()):
               name = dist.metadata["Name"]
@@ -89,6 +92,9 @@ jobs:
               if lower in SKIP or lower in seen:
                   continue
               seen.add(lower)
+              if lower in RUST_PKGS or lower.replace("-", "_") in RUST_PKGS:
+                  rust_pins.append(f"{name}=={version}")
+                  continue
               url = f"https://pypi.org/pypi/{name}/{version}/json"
               with urllib.request.urlopen(url) as resp:
                   data = json.loads(resp.read())
@@ -99,6 +105,10 @@ jobs:
                   print(f'  sha256 "{sdist["digests"]["sha256"]}"')
                   print(f'end')
                   print()
+
+          # Write Rust package pins as Ruby arguments for the formula
+          with open("/tmp/rust_pins_rb.txt", "w") as f:
+              f.write(", ".join(f'"{p}"' for p in rust_pins))
           PYSCRIPT
 
       - uses: actions/checkout@v4
@@ -112,6 +122,7 @@ jobs:
           TARBALL_URL: ${{ steps.pypi.outputs.url }}
           TARBALL_SHA: ${{ steps.pypi.outputs.sha256 }}
         run: |
+          RUST_PINS_RB=$(cat /tmp/rust_pins_rb.txt)
           mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/inframate.rb << ENDFORMULA
           class Inframate < Formula
@@ -124,14 +135,26 @@ jobs:
             license "AGPL-3.0-only"
 
             depends_on "python@3.13"
-            depends_on "rust" => :build
 
             skip_clean "libexec"
 
           $(sed 's/^/  /' /tmp/resources.txt)
 
             def install
-              virtualenv_install_with_resources
+              virtualenv_create(libexec, "python3.13")
+              # Install Rust-based packages as pre-built wheels from PyPI
+              system libexec/"bin/pip", "install", "-v", "--no-deps", "--ignore-installed",
+                     ${RUST_PINS_RB}
+              # Install pure/C-extension packages from source resources
+              resources.each do |r|
+                r.stage do
+                  system libexec/"bin/pip", "install", "-v", "--no-deps", "--no-binary", ":all:",
+                         "--ignore-installed", "."
+                end
+              end
+              system libexec/"bin/pip", "install", "-v", "--no-deps", "--no-binary", ":all:",
+                     "--ignore-installed", "."
+              bin.install_symlink libexec/"bin/inframate"
             end
 
             test do

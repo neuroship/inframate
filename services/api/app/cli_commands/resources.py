@@ -301,17 +301,24 @@ async def _show_summary(rows: list[dict]):
     """Stream AI plan summary to console."""
     ai_config = config.get_ai_config()
     if not ai_config.get("api_token"):
-        console.print("\n  [muted]AI not configured. Edit ~/.inframate/config.yml to add AI settings.[/]\n")
+        console.print("\n  [muted]AI not configured. Add to .inframate.yml in your project (or set OPENAI_API_KEY):[/]")
+        console.print("  [muted]  ai:[/]")
+        console.print("  [muted]    provider: openai[/]")
+        console.print("  [muted]    api_token: sk-...[/]\n")
+        Prompt.ask("  [dim]Press Enter to return[/]", default="", console=console)
         return
 
     from app.services.ai_service import summarize_plan_stream
 
     console.print("\n  [bold cyan]--- Plan Summary ---[/]\n")
-    async for chunk in summarize_plan_stream(rows, ai_config):
-        sys.stdout.write(chunk)
-        sys.stdout.flush()
-    sys.stdout.write("\n\n")
-    Prompt.ask("  [dim]Press Enter to return to TUI[/]", default="", console=console)
+    try:
+        async for chunk in summarize_plan_stream(rows, ai_config):
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+        sys.stdout.write("\n\n")
+    except Exception as e:
+        console.print(f"\n  [error]Error: {e}[/]\n")
+    Prompt.ask("  [dim]Press Enter to return[/]", default="", console=console)
 
 
 # --- Apply flow ---
