@@ -93,7 +93,9 @@ async def get_plan_json(
     var_file: str | None = None,
     extra_env: dict[str, str] | None = None,
 ) -> dict:
-    plan_file = os.path.join(workspace_path, ".inframate-plan.tfplan")
+    inframate_dir = os.path.join(workspace_path, ".inframate")
+    os.makedirs(inframate_dir, exist_ok=True)
+    plan_file = os.path.join(inframate_dir, "plan.tfplan")
     args = ["plan", "-input=false", "-lock-timeout=30s", "-out", plan_file, "-no-color"]
 
     output, code = await run_terraform(workspace_path, args, var_file=var_file, extra_env=extra_env)
@@ -119,7 +121,9 @@ async def stream_plan_with_output(
     on_line=None,
 ) -> dict:
     """Run terraform plan, call on_line(text) for each output line, return plan JSON."""
-    plan_file = os.path.join(workspace_path, ".inframate-plan.tfplan")
+    inframate_dir = os.path.join(workspace_path, ".inframate")
+    os.makedirs(inframate_dir, exist_ok=True)
+    plan_file = os.path.join(inframate_dir, "plan.tfplan")
     args = ["plan", "-input=false", "-lock-timeout=30s", "-out", plan_file, "-no-color"]
     cmd = [config.TERRAFORM_BINARY] + args
     _apply_config_defaults(cmd, args, var_file)

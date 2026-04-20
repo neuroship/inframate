@@ -95,9 +95,10 @@ Press `s` in the TUI (or click **Summarize** in the web UI) to get an AI-generat
 
 ## Configuration
 
-Config is stored in `~/.inframate/config.yml` (created on first run). Project-level `.inframate.yml` overrides global settings.
+Project config lives in `.inframate/config.yml` inside your Terraform project. Global defaults in `~/.inframate/config.yml` are merged underneath (project wins).
 
 ```yaml
+# .inframate/config.yml
 ai:
   provider: openai   # openai | anthropic | ollama | groq | deepseek
   api_token: sk-...
@@ -114,6 +115,8 @@ terraform:
   var_file: env/dev/terraform.tfvars         # used in plan, apply, destroy
   backend_config: env/dev/backend.hcl        # used in init
 ```
+
+The `.inframate/` directory also stores plan cache and temporary plan files. You may want to add `.inframate/` to your `.gitignore`.
 
 Provider defaults:
 

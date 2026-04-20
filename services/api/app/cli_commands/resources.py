@@ -194,7 +194,7 @@ async def _ai_fix_loop(project_dir: str, command: str, error_output: str, rerun_
     ai_config = config.get_ai_config()
     if not ai_config.get("api_token"):
         console.print()
-        console.print("  [muted]Tip: configure AI to get fix suggestions. Edit ~/.inframate/config.yml:[/]")
+        console.print("  [muted]Tip: configure AI to get fix suggestions. Add .inframate/config.yml:[/]")
         console.print("  [muted]  ai:[/]")
         console.print("  [muted]    provider: openai  # or: anthropic, ollama, groq, deepseek[/]")
         console.print("  [muted]    api_token: sk-...[/]")
@@ -301,7 +301,7 @@ async def _show_summary(rows: list[dict]):
     """Stream AI plan summary to console."""
     ai_config = config.get_ai_config()
     if not ai_config.get("api_token"):
-        console.print("\n  [muted]AI not configured. Add to .inframate.yml in your project (or set OPENAI_API_KEY):[/]")
+        console.print("\n  [muted]AI not configured. Add to .inframate/config.yml in your project (or set OPENAI_API_KEY):[/]")
         console.print("  [muted]  ai:[/]")
         console.print("  [muted]    provider: openai[/]")
         console.print("  [muted]    api_token: sk-...[/]\n")

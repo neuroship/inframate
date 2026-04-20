@@ -7,7 +7,8 @@ import time
 # In-memory cache: tf_path -> {plan_data, timestamp, tf_path}
 _cache: dict[str, dict] = {}
 
-CACHE_FILE = ".inframate-plan-cache.json"
+CACHE_DIR = ".inframate"
+CACHE_FILE = os.path.join(CACHE_DIR, "plan-cache.json")
 
 
 def get_cached_plan(tf_path: str) -> dict | None:
@@ -53,6 +54,8 @@ def save_cached_plan(tf_path: str, plan_data: dict) -> dict:
     }
     _cache[tf_path] = entry
 
+    cache_dir = os.path.join(tf_path, CACHE_DIR)
+    os.makedirs(cache_dir, exist_ok=True)
     cache_path = os.path.join(tf_path, CACHE_FILE)
     try:
         with open(cache_path, "w") as f:

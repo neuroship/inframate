@@ -41,7 +41,7 @@ Two services under `services/`:
 **`services/api`** - Python 3.13 / FastAPI backend
 - Entry point: `app/cli.py` - CLI with argparse, dispatches to TUI or web UI
 - App factory: `app/main.py` - creates FastAPI app, mounts routers + static files
-- `app/config.py` - YAML config: global `~/.inframate/config.yml` + project `.inframate.yml`
+- `app/config.py` - YAML config: global `~/.inframate/config.yml` + project `.inframate/config.yml`
 - `app/routers/` - API route handlers (terraform, aws, ai, settings)
 - `app/services/` - business logic (terraform CLI/parser, AWS inventory/costs/delete, AI)
 - `app/cli_commands/resources.py` - main CLI flow: load data, AI fix loop, TUI loop
@@ -62,7 +62,7 @@ Two services under `services/`:
 - Streaming uses SSE with `data: ` prefix and `[DONE]` sentinel
 - No auth - local CLI tool, single user
 - Project directory set via CLI `--dir` flag, stored in `app.state.project_dir`
-- Config priority: env vars > project `.inframate.yml` > global `~/.inframate/config.yml` > defaults
+- Config priority: env vars > project `.inframate/config.yml` > global `~/.inframate/config.yml` > defaults
 - AI providers: openai, anthropic, ollama, groq, deepseek (all via OpenAI-compatible client)
 
 ## CLI flow (resources.py)

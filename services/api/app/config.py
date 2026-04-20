@@ -33,7 +33,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def load_config(project_dir: str, overrides: dict | None = None):
-    """Load config: global ~/.inframate/config.yml + project .inframate.yml + env vars + overrides."""
+    """Load config: global ~/.inframate/config.yml + project .inframate/config.yml + env vars + overrides."""
     global PROJECT_DIR, TERRAFORM_BINARY, _config
 
     PROJECT_DIR = project_dir
@@ -47,7 +47,7 @@ def load_config(project_dir: str, overrides: dict | None = None):
 
     # 2. Project config (overrides global)
     project_config = {}
-    project_file = os.path.join(project_dir, ".inframate.yml")
+    project_file = os.path.join(project_dir, ".inframate", "config.yml")
     if os.path.isfile(project_file):
         with open(project_file) as f:
             project_config = yaml.safe_load(f) or {}
