@@ -2,8 +2,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from app import config
-from app.schemas import ChatMessage, ChatSessionRequest, DiagnoseRequest
-from app.services.ai_service import chat_session_stream, chat_stream, diagnose_stream
+from app.schemas import ChatMessage, ChatSessionRequest, DiagnoseRequest, SummarizeRequest
+from app.services.ai_service import chat_session_stream, chat_stream, diagnose_stream, summarize_plan_stream
 from app.services.terraform_parser import load_project_context
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -46,6 +46,18 @@ async def diagnose(req: DiagnoseRequest, request: Request):
 
     async def event_stream():
         async for chunk in diagnose_stream(req.command, req.output, context, ai_config):
+            yield _sse_chunk(chunk)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/summarize")
+async def summarize(req: SummarizeRequest):
+    ai_config = config.get_ai_config()
+
+    async def event_stream():
+        async for chunk in summarize_plan_stream(req.resources, ai_config):
             yield _sse_chunk(chunk)
         yield "data: [DONE]\n\n"
 

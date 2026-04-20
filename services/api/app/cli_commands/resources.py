@@ -139,6 +139,9 @@ def run_resources(
                 rows = asyncio.run(_load_costs(project_dir, rows))
                 show_costs = True
                 continue
+            elif action == "summarize":
+                asyncio.run(_show_summary(rows))
+                continue
             elif action == "apply":
                 _handle_apply(project_dir, resources)
             elif action == "destroy":
@@ -289,6 +292,26 @@ async def _ai_fix_loop(project_dir: str, command: str, error_output: str, rerun_
             return False
 
         context = load_project_context(project_dir)
+
+
+# --- Plan summary ---
+
+
+async def _show_summary(rows: list[dict]):
+    """Stream AI plan summary to console."""
+    ai_config = config.get_ai_config()
+    if not ai_config.get("api_token"):
+        console.print("\n  [muted]AI not configured. Edit ~/.inframate/config.yml to add AI settings.[/]\n")
+        return
+
+    from app.services.ai_service import summarize_plan_stream
+
+    console.print("\n  [bold cyan]--- Plan Summary ---[/]\n")
+    async for chunk in summarize_plan_stream(rows, ai_config):
+        sys.stdout.write(chunk)
+        sys.stdout.flush()
+    sys.stdout.write("\n\n")
+    Prompt.ask("  [dim]Press Enter to return to TUI[/]", default="", console=console)
 
 
 # --- Apply flow ---

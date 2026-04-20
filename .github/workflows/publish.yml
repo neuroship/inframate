@@ -124,6 +124,7 @@ jobs:
             license "AGPL-3.0-only"
 
             depends_on "python@3.13"
+            depends_on "rust" => :build
 
             skip_clean "libexec"
 

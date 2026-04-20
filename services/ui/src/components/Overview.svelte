@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from "svelte";
   import { createGrid, ModuleRegistry, AllCommunityModule, themeAlpine } from "ag-grid-community";
   import { AllEnterpriseModule } from "ag-grid-enterprise";
-  import { streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport, streamCloudScan, getVars, streamChatSession, getFile, updateFile, getAwsStatus } from "../lib/api.js";
+  import { streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport, streamCloudScan, getVars, streamChatSession, getFile, updateFile, getAwsStatus, streamSummarize } from "../lib/api.js";
   import { lastActionError } from "../lib/stores.js";
   import { marked } from "marked";
   import ConfirmModal from "./ConfirmModal.svelte";
@@ -101,6 +101,12 @@
   let diagInput = $state("");
   let diagEl = $state(null);
   let applyStatus = $state({}); // { filename: "applying"|"success"|"error" }
+
+  // Plan summary
+  let summaryText = $state("");
+  let summaryStreaming = $state(false);
+  let showSummary = $state(false);
+  let summaryController = $state(null);
 
   // Diff modal state
   let diffOpen = $state(false);
@@ -429,6 +435,27 @@
     diagMessages = [];
     applyStatus = {};
     stopDiag();
+  }
+
+  function runSummarize() {
+    summaryText = "";
+    summaryStreaming = true;
+    showSummary = true;
+    summaryController = streamSummarize(
+      allRows,
+      (chunk) => { summaryText += chunk; },
+      () => { summaryStreaming = false; summaryController = null; }
+    );
+  }
+
+  function dismissSummary() {
+    showSummary = false;
+    summaryText = "";
+    if (summaryController) {
+      summaryController.abort();
+      summaryController = null;
+    }
+    summaryStreaming = false;
   }
 
   const VALID_TF_COMMANDS = new Set(["init", "plan", "apply", "destroy", "taint", "fmt", "validate"]);
@@ -939,6 +966,7 @@
     observer.disconnect();
     gridApi?.destroy();
     if (diagController) diagController.abort();
+    if (summaryController) summaryController.abort();
     if (awsStatusInterval) clearInterval(awsStatusInterval);
   });
 </script>
@@ -1001,6 +1029,17 @@
           disabled={actionRunning}
         >
           <span class="icon-[tabler--package-import] size-3.5"></span> Import
+        </button>
+
+        <div class="w-px h-5 bg-base-content/10"></div>
+
+        <!-- Summarize -->
+        <button
+          class="btn btn-soft btn-xs"
+          onclick={runSummarize}
+          disabled={summaryStreaming || allRows.length === 0}
+        >
+          <span class="icon-[tabler--sparkles] size-3.5"></span> Summarize
         </button>
 
       <!-- Var file selector -->
@@ -1322,6 +1361,43 @@
           {/if}
         </div>
       </div>
+      </div>
+    {/if}
+
+    <!-- Plan Summary modal -->
+    {#if showSummary}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onclick={() => { if (!summaryStreaming) dismissSummary(); }}>
+        <div class="bg-base-100 w-[70vw] max-w-3xl h-[70vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onclick={(e) => e.stopPropagation()}>
+          <!-- Header -->
+          <div class="flex items-center justify-between px-4 py-2 border-b border-primary/10 bg-primary/5 shrink-0">
+            <span class="text-xs font-medium text-primary flex items-center gap-1.5">
+              <span class="icon-[tabler--sparkles] size-3.5"></span>
+              Plan Summary
+              {#if summaryStreaming}
+                <span class="loading loading-dots loading-xs ms-1"></span>
+              {/if}
+            </span>
+            <div class="flex items-center gap-0.5">
+              <button class="btn btn-text btn-xs btn-square" onclick={() => navigator.clipboard.writeText(summaryText)} title="Copy">
+                <span class="icon-[tabler--copy] size-3"></span>
+              </button>
+              <button class="btn btn-text btn-xs btn-square" onclick={dismissSummary} aria-label="Close">
+                <span class="icon-[tabler--x] size-3"></span>
+              </button>
+            </div>
+          </div>
+          <!-- Content -->
+          <div class="overflow-auto flex-1 p-4">
+            <div class="diagnosis-md text-xs text-base-content/80">
+              {@html renderMarkdown(summaryText)}
+            </div>
+            {#if summaryStreaming}
+              <span class="loading loading-dots loading-xs text-primary"></span>
+            {/if}
+          </div>
+        </div>
       </div>
     {/if}
 

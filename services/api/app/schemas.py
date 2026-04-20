@@ -27,3 +27,7 @@ class ChatSessionRequest(BaseModel):
 class DiagnoseRequest(BaseModel):
     command: str
     output: str
+
+
+class SummarizeRequest(BaseModel):
+    resources: list[dict]

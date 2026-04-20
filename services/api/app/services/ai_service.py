@@ -51,6 +51,22 @@ Always show the COMPLETE file content (not partial snippets) so it can be applie
 Be concise and direct. Use markdown formatting for readability."""
 
 
+SUMMARIZE_PROMPT = """You are an expert Terraform assistant. The user has a terraform plan with pending changes.
+
+Analyze the resource changes below and provide a clear, prioritized summary:
+
+1. List changes from MOST IMPORTANT (destructive/risky) to LEAST IMPORTANT (safe/minor)
+2. For each change, briefly explain what it does and its potential impact
+3. Flag any risky operations (destroys, replacements, security group changes, etc.)
+
+Use markdown formatting. Be concise — one or two lines per resource. Group by risk level:
+- **Critical** — destroys, replacements, security changes
+- **Important** — updates to core resources
+- **Safe** — creates, minor updates
+
+Skip no-op resources unless there are very few changes total."""
+
+
 def _get_client(config: dict) -> AsyncOpenAI | None:
     token = config.get("api_token")
     if not token:
@@ -133,6 +149,71 @@ async def diagnose_stream(
             "content": f"Command: terraform {command}\n\nOutput:\n```\n{output}\n```",
         }
     )
+
+    stream = await client.chat.completions.create(
+        model=model, messages=messages, stream=True
+    )
+    async for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta.content:
+            yield delta.content
+
+
+async def summarize_plan_stream(
+    resources: list[dict], config: dict
+) -> AsyncGenerator[str, None]:
+    client = _get_client(config)
+    if not client:
+        yield "Error: AI not configured. Open Settings to add your AI endpoint and token."
+        return
+
+    lines = []
+    for r in resources:
+        action = r.get("action", "no-op")
+        if action == "no-op":
+            continue
+        rtype = r.get("display_type") or r.get("resource_type", "unknown")
+        name = r.get("resource_name", "unnamed")
+        address = r.get("id", "")
+
+        line = f"- {action.upper()}: {rtype} \"{name}\" ({address})"
+
+        before = r.get("before", {}) or {}
+        after = r.get("after", {}) or {}
+        if action in ("update", "replace") and before and after:
+            changes = []
+            for k in sorted(set(list(before.keys()) + list(after.keys()))):
+                if k in ("tags", "tags_all", "timeouts"):
+                    continue
+                bv, av = before.get(k), after.get(k)
+                if bv != av:
+                    changes.append(f"  {k}: {bv} -> {av}")
+            if changes:
+                line += "\n" + "\n".join(changes[:10])
+        elif action == "create" and after:
+            attrs = [
+                f"  {k}: {v}"
+                for k, v in list(after.items())[:5]
+                if v is not None and k not in ("tags", "tags_all", "timeouts")
+            ]
+            if attrs:
+                line += "\n" + "\n".join(attrs)
+
+        lines.append(line)
+
+    if not lines:
+        yield "No pending changes to summarize. All resources are up to date."
+        return
+
+    plan_text = "\n".join(lines)
+    model = config.get("model") or "gpt-4o"
+    messages = [
+        {"role": "system", "content": SUMMARIZE_PROMPT},
+        {
+            "role": "user",
+            "content": f"Here are the planned changes ({len(lines)} resources with changes):\n\n{plan_text}",
+        },
+    ]
 
     stream = await client.chat.completions.create(
         model=model, messages=messages, stream=True

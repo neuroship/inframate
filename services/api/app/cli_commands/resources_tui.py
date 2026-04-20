@@ -306,6 +306,7 @@ class ResourcesApp(App):
         Binding("r", "apply", "Apply", priority=True),
         Binding("x", "destroy_selected", "Destroy selected", priority=True),
         # Costs & refresh
+        Binding("s", "summarize", "Summarize", priority=True),
         Binding("$", "load_costs", "Costs", priority=True),
         Binding("f5", "refresh", "Refresh", priority=True),
         # Search
@@ -350,7 +351,7 @@ class ResourcesApp(App):
             " [blue]S[/]=State  [magenta]C[/]=Code  [cyan]W[/]=Cloud   "
             "Status: [dim]a[/]ll [dim]m[/]anaged [dim]p[/]ending [dim]d[/]rift [dim]u[/]nmanaged [dim]o[/]rphaned   "
             "Action: [dim]1[/]create [dim]2[/]update [dim]3[/]destroy [dim]4[/]replace [dim]0[/]clear   "
-            "[dim]/[/]=search [dim]$[/]=costs [dim]F5[/]=refresh [dim]space[/]=select [dim]enter[/]=detail [dim]r[/]=apply [dim]x[/]=destroy"
+            "[dim]s[/]=summary [dim]/[/]=search [dim]$[/]=costs [dim]F5[/]=refresh [dim]space[/]=select [dim]enter[/]=detail [dim]r[/]=apply [dim]x[/]=destroy"
         ))
 
         if self.credential_expiry and self.credential_expiry.get("expires_at"):
@@ -449,6 +450,9 @@ class ResourcesApp(App):
 
     def action_refresh(self) -> None:
         self.exit(result=("refresh", []))
+
+    def action_summarize(self) -> None:
+        self.exit(result=("summarize", []))
 
     def action_load_costs(self) -> None:
         if self.show_costs:

@@ -120,6 +120,10 @@ export function streamChatSession(messages, onData, onDone) {
   return streamSSE(`${BASE}/ai/chat-session`, "POST", { messages }, onData, onDone);
 }
 
+export function streamSummarize(resources, onData, onDone) {
+  return streamSSE(`${BASE}/ai/summarize`, "POST", { resources }, onData, onDone);
+}
+
 export function streamDiagnose(command, output, onData, onDone) {
   return streamSSE(
     `${BASE}/ai/diagnose`,
