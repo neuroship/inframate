@@ -77,13 +77,19 @@ jobs:
         run: |
           pip install ${{ steps.pypi.outputs.url }}
           python3 << 'PYSCRIPT' > /tmp/resources.txt
-          import importlib.metadata, json, urllib.request
+          import importlib.metadata, json, urllib.request, re
 
           SKIP = {"inframate", "pip", "setuptools", "wheel"}
-          # Rust/maturin packages — installed as wheels in the formula
+          # Rust/maturin packages — provided as wheel resources per platform
           RUST_PKGS = {"jiter", "pydantic-core", "pydantic_core", "watchfiles"}
           seen = set()
-          rust_pins = []
+
+          def find_wheel(urls, abi_tag, platform_tag):
+              for u in urls:
+                  fn = u["filename"]
+                  if fn.endswith(".whl") and abi_tag in fn and platform_tag in fn:
+                      return u
+              return None
 
           for dist in sorted(importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower()):
               name = dist.metadata["Name"]
@@ -92,23 +98,33 @@ jobs:
               if lower in SKIP or lower in seen:
                   continue
               seen.add(lower)
-              if lower in RUST_PKGS or lower.replace("-", "_") in RUST_PKGS:
-                  rust_pins.append(f"{name}=={version}")
-                  continue
               url = f"https://pypi.org/pypi/{name}/{version}/json"
               with urllib.request.urlopen(url) as resp:
                   data = json.loads(resp.read())
-              sdist = next((u for u in data["urls"] if u["packagetype"] == "sdist"), None)
-              if sdist:
-                  print(f'resource "{name}" do')
-                  print(f'  url "{sdist["url"]}"')
-                  print(f'  sha256 "{sdist["digests"]["sha256"]}"')
-                  print(f'end')
-                  print()
 
-          # Write Rust package pins as Ruby arguments for the formula
-          with open("/tmp/rust_pins_rb.txt", "w") as f:
-              f.write(", ".join(f'"{p}"' for p in rust_pins))
+              if lower in RUST_PKGS or lower.replace("-", "_") in RUST_PKGS:
+                  # Emit platform-specific wheel resources (nounzip to keep .whl intact)
+                  urls = data["urls"]
+                  for arch, platform_tag in [("arm", "macosx_11_0_arm64"), ("intel", "macosx_10_12_x86_64")]:
+                      whl = find_wheel(urls, "cp313-cp313", platform_tag)
+                      if not whl:
+                          whl = find_wheel(urls, "cp313", platform_tag)
+                      if whl:
+                          print(f'on_{arch} do')
+                          print(f'  resource "{name}" do')
+                          print(f'    url "{whl["url"]}", using: :nounzip')
+                          print(f'    sha256 "{whl["digests"]["sha256"]}"')
+                          print(f'  end')
+                          print(f'end')
+                          print()
+              else:
+                  sdist = next((u for u in data["urls"] if u["packagetype"] == "sdist"), None)
+                  if sdist:
+                      print(f'resource "{name}" do')
+                      print(f'  url "{sdist["url"]}"')
+                      print(f'  sha256 "{sdist["digests"]["sha256"]}"')
+                      print(f'end')
+                      print()
           PYSCRIPT
 
       - uses: actions/checkout@v4
@@ -122,7 +138,6 @@ jobs:
           TARBALL_URL: ${{ steps.pypi.outputs.url }}
           TARBALL_SHA: ${{ steps.pypi.outputs.sha256 }}
         run: |
-          RUST_PINS_RB=$(cat /tmp/rust_pins_rb.txt)
           mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/inframate.rb << ENDFORMULA
           class Inframate < Formula
@@ -142,14 +157,15 @@ jobs:
 
             def install
               virtualenv_create(libexec, "python3.13")
-              # Install Rust-based packages as pre-built wheels from PyPI
-              system libexec/"bin/pip", "install", "-v", "--no-deps", "--ignore-installed",
-                     ${RUST_PINS_RB}
-              # Install pure/C-extension packages from source resources
               resources.each do |r|
                 r.stage do
-                  system libexec/"bin/pip", "install", "-v", "--no-deps", "--no-binary", ":all:",
-                         "--ignore-installed", "."
+                  whl = Dir.glob("*.whl").first
+                  if whl
+                    system libexec/"bin/pip", "install", "-v", "--no-deps", "--ignore-installed", whl
+                  else
+                    system libexec/"bin/pip", "install", "-v", "--no-deps", "--no-binary", ":all:",
+                           "--ignore-installed", "."
+                  end
                 end
               end
               system libexec/"bin/pip", "install", "-v", "--no-deps", "--no-binary", ":all:",
