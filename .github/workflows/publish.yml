@@ -156,21 +156,19 @@ jobs:
           $(sed 's/^/  /' /tmp/resources.txt)
 
             def install
-              virtualenv_create(libexec, "python3.13")
+              venv = virtualenv_create(libexec, "python3.13")
               resources.each do |r|
                 r.stage do
                   whl = Dir.glob("*.whl").first
                   if whl
-                    system libexec/"bin/pip", "install", "-v", "--no-deps", "--ignore-installed", whl
+                    system libexec/"bin/python", "-m", "pip", "install", "-v",
+                           "--no-deps", "--ignore-installed", whl
                   else
-                    system libexec/"bin/pip", "install", "-v", "--no-deps", "--no-binary", ":all:",
-                           "--ignore-installed", "."
+                    venv.pip_install Pathname.pwd
                   end
                 end
               end
-              system libexec/"bin/pip", "install", "-v", "--no-deps", "--no-binary", ":all:",
-                     "--ignore-installed", "."
-              bin.install_symlink libexec/"bin/inframate"
+              venv.pip_install_and_link buildpath
             end
 
             test do
