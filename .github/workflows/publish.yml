@@ -75,9 +75,31 @@ jobs:
 
       - name: Generate resource blocks
         run: |
-          pip install setuptools homebrew-pypi-poet
           pip install ${{ steps.pypi.outputs.url }}
-          poet inframate > /tmp/resources.txt
+          python3 << 'PYSCRIPT' > /tmp/resources.txt
+          import importlib.metadata, json, urllib.request
+
+          SKIP = {"inframate", "pip", "setuptools", "wheel"}
+          seen = set()
+
+          for dist in sorted(importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower()):
+              name = dist.metadata["Name"]
+              lower = name.lower()
+              version = dist.metadata["Version"]
+              if lower in SKIP or lower in seen:
+                  continue
+              seen.add(lower)
+              url = f"https://pypi.org/pypi/{name}/{version}/json"
+              with urllib.request.urlopen(url) as resp:
+                  data = json.loads(resp.read())
+              sdist = next((u for u in data["urls"] if u["packagetype"] == "sdist"), None)
+              if sdist:
+                  print(f'resource "{name}" do')
+                  print(f'  url "{sdist["url"]}"')
+                  print(f'  sha256 "{sdist["digests"]["sha256"]}"')
+                  print(f'end')
+                  print()
+          PYSCRIPT
 
       - uses: actions/checkout@v4
         with:
