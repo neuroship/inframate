@@ -170,7 +170,7 @@ class OverviewResult:
         return bool(self.rows)
 
 
-async def compute_overview(tf_path: str) -> OverviewResult:
+async def compute_overview(tf_path: str, var_file: str | None = None) -> OverviewResult:
     """Compute overview rows for a terraform project directory.
 
     Tries graph + plan first. Falls back to state if both fail.
@@ -189,7 +189,7 @@ async def compute_overview(tf_path: str) -> OverviewResult:
     if cached and not cached["plan_data"].get("error"):
         plan_data = cached["plan_data"]
     else:
-        plan_data = await get_plan_json(tf_path)
+        plan_data = await get_plan_json(tf_path, var_file=var_file)
         # Only cache successful plans
         if not plan_data.get("error"):
             save_cached_plan(tf_path, plan_data)

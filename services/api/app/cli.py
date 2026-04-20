@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 from importlib.metadata import version
 
@@ -24,6 +25,7 @@ def main():
     parser.add_argument("--no-cloud", action="store_true", help="Skip cloud scan (faster, no drift/unmanaged detection)")
     parser.add_argument("--status", type=str, default=None, choices=["managed", "pending", "drift", "unmanaged", "orphaned"], help="Filter by status (for --json)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON (non-interactive)")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose/debug output")
 
     sub = parser.add_subparsers(dest="command")
 
@@ -32,6 +34,9 @@ def main():
     ui_parser.add_argument("--no-browser", action="store_true", help="Don't open browser on startup")
 
     args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
 
     project_dir = os.path.abspath(args.dir)
     if not os.path.isdir(project_dir):

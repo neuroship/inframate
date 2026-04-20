@@ -1,5 +1,6 @@
 import asyncio
 import json as json_mod
+import logging
 import os
 import re
 import sys
@@ -10,6 +11,8 @@ from rich.syntax import Syntax
 
 from app import config
 from app.cli_commands.console import console
+
+logger = logging.getLogger(__name__)
 
 
 FILE_PATTERN = re.compile(r'File:\s*(\S+)\s*\n```\w*\n(.*?)```', re.DOTALL)
@@ -494,6 +497,16 @@ async def _load_data(
 
     # Phase 1: Terraform
     result = OverviewResult([])
+    verbose = logger.isEnabledFor(logging.DEBUG)
+    tf_config = config.get_terraform_config()
+
+    if tf_config.get("var_file") or tf_config.get("backend_config"):
+        parts = []
+        if tf_config.get("var_file"):
+            parts.append(f"var_file={tf_config['var_file']}")
+        if tf_config.get("backend_config"):
+            parts.append(f"backend_config={tf_config['backend_config']}")
+        console.print(f"[muted]  terraform config: {', '.join(parts)}[/]")
 
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
         task = progress.add_task("Reading terraform graph...", total=None)
@@ -501,11 +514,18 @@ async def _load_data(
         dot = await get_graph_dot(project_dir)
         graph = parse_dot_graph(dot)
         result.graph_nodes = len(graph["nodes"])
+        if verbose:
+            console.print(f"[dim]  graph: {len(graph['nodes'])} nodes, dot_len={len(dot)}[/]")
+            if not graph["nodes"] and dot:
+                console.print(f"[dim]  graph raw (first 500 chars): {dot[:500]}[/]")
         progress.update(task, description=f"Graph: {len(graph['nodes'])} nodes. Reading plan...")
 
         cached = get_cached_plan(project_dir)
         if cached and not cached["plan_data"].get("error"):
             plan_data = cached["plan_data"]
+            if verbose:
+                rc = len(plan_data.get("resource_changes", []))
+                console.print(f"[dim]  plan: loaded from cache ({rc} resource_changes)[/]")
             progress.update(task, description=f"Graph: {len(graph['nodes'])} nodes. Plan loaded from cache.")
         else:
             n = len(graph['nodes'])
@@ -528,11 +548,20 @@ async def _load_data(
             result.plan_error = plan_data["error"]
             result.plan_raw_output = plan_data.get("raw_output", "")
             result.warnings.append(plan_data["error"])
+            if verbose:
+                console.print(f"[dim]  plan error: {plan_data['error'][:200]}[/]")
+        elif verbose:
+            rc_count = len(plan_data.get("resource_changes", []))
+            prior_count = len(plan_data.get("prior_state", {}).get("values", {}).get("root_module", {}).get("resources", []))
+            console.print(f"[dim]  plan: resource_changes={rc_count}, prior_state_resources={prior_count}[/]")
 
         plan_resources = parse_plan_resources(plan_data)
         result.plan_resources = len(plan_resources)
         locations = get_resource_locations(project_dir)
         rows = build_overview_rows(graph, plan_resources, locations)
+
+        if verbose:
+            console.print(f"[dim]  build_overview_rows: graph_nodes={len(graph['nodes'])}, plan_resources={len(plan_resources)}, rows_produced={len(rows)}[/]")
 
         if not rows:
             progress.update(task, description="Graph+plan empty, reading state...")

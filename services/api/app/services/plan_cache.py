@@ -11,6 +11,18 @@ CACHE_DIR = ".inframate"
 CACHE_FILE = os.path.join(CACHE_DIR, "plan-cache.json")
 
 
+def _is_valid_plan(plan_data: dict) -> bool:
+    """Check that cached plan data is non-empty and not an error."""
+    if not plan_data:
+        return False
+    if plan_data.get("error"):
+        return False
+    # A valid plan should have at least one of these keys
+    if not plan_data.get("resource_changes") and not plan_data.get("prior_state"):
+        return False
+    return True
+
+
 def get_cached_plan(tf_path: str) -> dict | None:
     """Return cached plan if still fresh (no .tf files changed since cache)."""
     entry = _cache.get(tf_path)
@@ -30,6 +42,11 @@ def get_cached_plan(tf_path: str) -> dict | None:
                 return None
         else:
             return None
+
+    # Reject empty/failed cached plans
+    if not _is_valid_plan(entry.get("plan_data", {})):
+        _cache.pop(tf_path, None)
+        return None
 
     # Invalidate if any .tf file is newer than the cache
     cache_ts = entry.get("timestamp", 0)

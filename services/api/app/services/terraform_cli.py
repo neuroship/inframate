@@ -1,12 +1,14 @@
 import asyncio
 import json
+import logging
 import os
 from collections.abc import AsyncGenerator
 
 from app import config
 
+logger = logging.getLogger(__name__)
 
-_VAR_FILE_COMMANDS = {"plan", "apply", "destroy", "import"}
+_VAR_FILE_COMMANDS = {"plan", "apply", "destroy", "import", "graph"}
 
 
 def _build_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
@@ -28,11 +30,15 @@ def _apply_config_defaults(cmd: list[str], args: list[str], var_file: str | None
     effective_var_file = var_file or tf_config.get("var_file")
     if effective_var_file and command in _VAR_FILE_COMMANDS and "-var-file" not in args:
         cmd.extend(["-var-file", effective_var_file])
+        logger.debug("applied var_file=%s for command=%s", effective_var_file, command)
+    elif command in _VAR_FILE_COMMANDS:
+        logger.debug("no var_file configured for command=%s", command)
 
     # backend_config: only for init
     backend_config = tf_config.get("backend_config")
     if backend_config and command == "init" and not any(a.startswith("-backend-config") for a in args):
         cmd.append(f"-backend-config={backend_config}")
+        logger.debug("applied backend_config=%s", backend_config)
 
 
 async def stream_terraform(
@@ -75,6 +81,7 @@ async def run_terraform(
 ) -> tuple[str, int]:
     cmd = [config.TERRAFORM_BINARY] + args
     _apply_config_defaults(cmd, args, var_file)
+    logger.debug("run_terraform: %s (cwd=%s)", " ".join(cmd), workspace_path)
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -85,7 +92,11 @@ async def run_terraform(
         env=_build_env(extra_env),
     )
     stdout, _ = await process.communicate()
-    return stdout.decode(), process.returncode
+    output = stdout.decode()
+    logger.debug("run_terraform: exit=%s output_len=%d", process.returncode, len(output))
+    if process.returncode != 0:
+        logger.warning("run_terraform failed: cmd=%s exit=%s output=%s", " ".join(cmd), process.returncode, output[:500])
+    return output, process.returncode
 
 
 async def get_plan_json(
