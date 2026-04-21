@@ -1,6 +1,9 @@
 """Shared overview logic used by both API routes and CLI commands."""
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 from app.services.plan_cache import get_cached_plan, save_cached_plan
 from app.services.terraform_cli import get_plan_json, get_graph_dot, get_state
@@ -77,16 +80,29 @@ def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | Non
             base = match.group(1)
             indexed_lookup.setdefault(base, []).append((addr, info))
 
+    verbose = logger.isEnabledFor(logging.DEBUG)
     rows = []
+    matched = 0
+    skipped_no_addr = 0
+    unmatched = 0
+    unmatched_ids = []
     for node in graph["nodes"]:
         res_type = node.get("resource_type", "")
         res_name = node.get("resource_name", "")
         base_addr = f"{res_type}.{res_name}" if res_type and res_name else ""
+
+        if not base_addr:
+            skipped_no_addr += 1
+            if verbose and len(unmatched_ids) < 5:
+                unmatched_ids.append(f"  no resource_type/name: id={node.get('id', '?')}, type={node.get('type', '?')}")
+            continue
+
         loc = locations.get(base_addr)
 
         plan_info = plan_resources.get(base_addr)
         if plan_info is not None:
             rows.append(_make_row(node, base_addr, res_type, res_name, plan_info, location=loc))
+            matched += 1
             continue
 
         instances = indexed_lookup.get(base_addr, [])
@@ -99,7 +115,35 @@ def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | Non
                     node, full_addr, res_type, display_name, inst_info,
                     instance_key=idx_label, location=loc,
                 ))
+            matched += 1
             continue
+
+        unmatched += 1
+
+    if verbose:
+        plan_sample = list(plan_resources.keys())[:5]
+        logger.debug(
+            "build_overview_rows: graph_nodes=%d, plan_keys=%d, matched=%d, "
+            "skipped_no_addr=%d, unmatched=%d",
+            len(graph["nodes"]), len(plan_resources), matched,
+            skipped_no_addr, unmatched,
+        )
+        if skipped_no_addr:
+            logger.debug(
+                "  skipped nodes lack resource_type/resource_name (likely module nodes parsed as opaque):"
+            )
+            for line in unmatched_ids:
+                logger.debug(line)
+        if plan_sample:
+            logger.debug("  sample plan_resources keys: %s", plan_sample)
+
+    if not rows and (skipped_no_addr or unmatched):
+        logger.warning(
+            "build_overview_rows produced 0 rows: %d graph nodes skipped "
+            "(no resource_type/name — likely module-prefixed resources), "
+            "%d unmatched. Plan has %d keys. Use --verbose for details.",
+            skipped_no_addr, unmatched, len(plan_resources),
+        )
 
     deps = {}
     for e in graph["edges"]:

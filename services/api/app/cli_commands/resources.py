@@ -355,12 +355,15 @@ def _handle_apply(project_dir: str, resources: list[dict]):
 
 async def _run_apply(project_dir: str, resources: list[dict]):
     """Stream terraform apply, then AI fix loop on failure."""
+    from app.services.plan_cache import invalidate_cache
+
     args = ["apply"]
     if resources:
         args += [f"-target={r['id']}" for r in resources]
 
     console.print(f"\n[bold]Running terraform apply...[/]\n")
     output, code = await _stream_and_capture(project_dir, args)
+    invalidate_cache(project_dir)
 
     if code == 0:
         console.print("\n[success]✓ Apply succeeded![/]")
@@ -398,12 +401,15 @@ def _handle_destroy(project_dir: str, resources: list[dict]):
 
 
 async def _run_destroy(project_dir: str, tf_resources: list[dict], aws_only: list[dict]):
+    from app.services.plan_cache import invalidate_cache
+
     if tf_resources:
         targets = [f"-target={r['id']}" for r in tf_resources]
         args = ["destroy"] + targets
 
         console.print(f"\n[bold]Destroying {len(tf_resources)} terraform resource(s)...[/]\n")
         output, code = await _stream_and_capture(project_dir, args)
+        invalidate_cache(project_dir)
 
         if code != 0:
             rerun = ["destroy", "-auto-approve", "-no-color"] + targets

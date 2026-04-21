@@ -41,9 +41,12 @@ def _aws_region() -> str:
 # --- Terraform commands (SSE streaming) ---
 
 
-async def _sse_stream(workspace_path: str, args: list[str], var_file: str | None):
+async def _sse_stream(workspace_path: str, args: list[str], var_file: str | None, invalidate_plan_cache: bool = False):
     async for line in stream_terraform(workspace_path, args, var_file):
         yield f"data: {line}\n\n"
+    if invalidate_plan_cache:
+        from app.services.plan_cache import invalidate_cache
+        invalidate_cache(workspace_path)
     yield "data: [DONE]\n\n"
 
 
@@ -68,14 +71,14 @@ async def terraform_plan(request: Request, cmd: TerraformCommand | None = None):
 async def terraform_apply(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
     args = ["apply"] + (cmd.args if cmd else [])
-    return StreamingResponse(_sse_stream(tf, args, cmd.var_file if cmd else None), media_type="text/event-stream")
+    return StreamingResponse(_sse_stream(tf, args, cmd.var_file if cmd else None, invalidate_plan_cache=True), media_type="text/event-stream")
 
 
 @router.post("/destroy")
 async def terraform_destroy(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
     args = ["destroy"] + (cmd.args if cmd else [])
-    return StreamingResponse(_sse_stream(tf, args, cmd.var_file if cmd else None), media_type="text/event-stream")
+    return StreamingResponse(_sse_stream(tf, args, cmd.var_file if cmd else None, invalidate_plan_cache=True), media_type="text/event-stream")
 
 
 @router.post("/fmt")

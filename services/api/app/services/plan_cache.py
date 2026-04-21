@@ -84,5 +84,11 @@ def save_cached_plan(tf_path: str, plan_data: dict) -> dict:
 
 
 def invalidate_cache(tf_path: str):
-    """Clear cached plan."""
+    """Clear cached plan (memory + disk)."""
     _cache.pop(tf_path, None)
+    cache_path = os.path.join(tf_path, CACHE_FILE)
+    if os.path.isfile(cache_path):
+        try:
+            os.remove(cache_path)
+        except OSError:
+            pass
