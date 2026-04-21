@@ -8,7 +8,7 @@ from app import config
 
 logger = logging.getLogger(__name__)
 
-_VAR_FILE_COMMANDS = {"plan", "apply", "destroy", "import", "graph"}
+_VAR_FILE_COMMANDS = {"plan", "apply", "destroy", "import"}
 
 
 def _build_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
