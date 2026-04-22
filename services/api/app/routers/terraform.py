@@ -22,7 +22,11 @@ from app.services.terraform_parser import (
     extract_resources_from_state,
     parse_dot_graph,
 )
-from app.services.overview import compute_overview, parse_plan_resources, build_overview_rows
+from app.services.overview import (
+    compute_overview,
+    parse_plan_resources,
+    build_overview_rows,
+)
 
 router = APIRouter(prefix="/api/terraform", tags=["terraform"])
 
@@ -35,17 +39,27 @@ def _tf_path(request: Request) -> str:
 
 
 def _aws_region() -> str:
-    return os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
+    return (
+        os.environ.get("AWS_DEFAULT_REGION")
+        or os.environ.get("AWS_REGION")
+        or "us-east-1"
+    )
 
 
 # --- Terraform commands (SSE streaming) ---
 
 
-async def _sse_stream(workspace_path: str, args: list[str], var_file: str | None, invalidate_plan_cache: bool = False):
+async def _sse_stream(
+    workspace_path: str,
+    args: list[str],
+    var_file: str | None,
+    invalidate_plan_cache: bool = False,
+):
     async for line in stream_terraform(workspace_path, args, var_file):
         yield f"data: {line}\n\n"
     if invalidate_plan_cache:
         from app.services.plan_cache import invalidate_cache
+
         invalidate_cache(workspace_path)
     yield "data: [DONE]\n\n"
 
@@ -57,42 +71,61 @@ def _init_args(cmd: TerraformCommand | None) -> list[str]:
 @router.post("/init")
 async def terraform_init(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
-    return StreamingResponse(_sse_stream(tf, _init_args(cmd), None), media_type="text/event-stream")
+    return StreamingResponse(
+        _sse_stream(tf, _init_args(cmd), None), media_type="text/event-stream"
+    )
 
 
 @router.post("/plan")
 async def terraform_plan(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
     args = ["plan"] + (cmd.args if cmd else [])
-    return StreamingResponse(_sse_stream(tf, args, cmd.var_file if cmd else None), media_type="text/event-stream")
+    return StreamingResponse(
+        _sse_stream(tf, args, cmd.var_file if cmd else None),
+        media_type="text/event-stream",
+    )
 
 
 @router.post("/apply")
 async def terraform_apply(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
     args = ["apply"] + (cmd.args if cmd else [])
-    return StreamingResponse(_sse_stream(tf, args, cmd.var_file if cmd else None, invalidate_plan_cache=True), media_type="text/event-stream")
+    return StreamingResponse(
+        _sse_stream(
+            tf, args, cmd.var_file if cmd else None, invalidate_plan_cache=True
+        ),
+        media_type="text/event-stream",
+    )
 
 
 @router.post("/destroy")
 async def terraform_destroy(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
     args = ["destroy"] + (cmd.args if cmd else [])
-    return StreamingResponse(_sse_stream(tf, args, cmd.var_file if cmd else None, invalidate_plan_cache=True), media_type="text/event-stream")
+    return StreamingResponse(
+        _sse_stream(
+            tf, args, cmd.var_file if cmd else None, invalidate_plan_cache=True
+        ),
+        media_type="text/event-stream",
+    )
 
 
 @router.post("/fmt")
 async def terraform_fmt(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
     args = ["fmt"] + (cmd.args if cmd else [])
-    return StreamingResponse(_sse_stream(tf, args, None), media_type="text/event-stream")
+    return StreamingResponse(
+        _sse_stream(tf, args, None), media_type="text/event-stream"
+    )
 
 
 @router.post("/validate")
 async def terraform_validate(request: Request, cmd: TerraformCommand | None = None):
     tf = _tf_path(request)
     args = ["validate"] + (cmd.args if cmd else [])
-    return StreamingResponse(_sse_stream(tf, args, None), media_type="text/event-stream")
+    return StreamingResponse(
+        _sse_stream(tf, args, None), media_type="text/event-stream"
+    )
 
 
 @router.post("/taint")
@@ -118,7 +151,10 @@ async def terraform_import(request: Request, body: dict):
     resource_id = body.get("id", "")
     if not address or not resource_id:
         raise HTTPException(400, "address and id are required")
-    return StreamingResponse(_sse_stream(tf, ["import", address, resource_id], None), media_type="text/event-stream")
+    return StreamingResponse(
+        _sse_stream(tf, ["import", address, resource_id], None),
+        media_type="text/event-stream",
+    )
 
 
 # --- Plan JSON ---
@@ -179,6 +215,7 @@ async def get_overview_stream(request: Request):
         yield f"data: {_json.dumps({'type': 'phase', 'message': f'Found {node_count} resources. Running terraform plan...'})}\n\n"
 
         import asyncio as _asyncio
+
         plan_lines_queue = _asyncio.Queue()
         plan_result = {}
 
@@ -202,11 +239,13 @@ async def get_overview_stream(request: Request):
         plan_data = plan_result.get("data", {"error": "Plan failed"})
 
         from app.services.plan_cache import save_cached_plan
+
         cache_entry = save_cached_plan(tf_path, plan_data)
 
         yield f"data: {_json.dumps({'type': 'phase', 'message': 'Processing plan output...'})}\n\n"
 
         from app.services.terraform_parser import get_resource_locations
+
         plan_resources = parse_plan_resources(plan_data)
         locations = get_resource_locations(tf_path)
         rows = build_overview_rows(graph, plan_resources, locations)
@@ -233,6 +272,7 @@ async def cloud_scan(request: Request):
         yield f"data: {json.dumps({'type': 'phase', 'message': 'Scanning cloud resources...'})}\n\n"
 
         import asyncio
+
         loop = asyncio.get_event_loop()
         progress_queue = asyncio.Queue()
 
@@ -242,7 +282,9 @@ async def cloud_scan(request: Request):
         scan_task = asyncio.create_task(scan_all({}, region, on_progress=on_progress))
         while not scan_task.done():
             try:
-                done, total, label = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+                done, total, label = await asyncio.wait_for(
+                    progress_queue.get(), timeout=0.1
+                )
                 yield f"data: {json.dumps({'type': 'scan_progress', 'done': done, 'total': total, 'label': label})}\n\n"
             except asyncio.TimeoutError:
                 continue
@@ -263,6 +305,7 @@ async def cloud_scan(request: Request):
 @router.post("/aws-delete-check")
 async def aws_delete_check(body: dict):
     from app.services.aws_delete import get_delete_preconditions
+
     resources = body.get("resources", [])
     return get_delete_preconditions(resources)
 
@@ -317,7 +360,11 @@ async def aws_delete_resources(request: Request, body: dict):
 
 @router.get("/costs")
 async def get_costs(request: Request, days: int = 30):
-    from app.services.aws_costs import get_costs_by_resource, get_costs_by_service, match_costs_to_resources
+    from app.services.aws_costs import (
+        get_costs_by_resource,
+        get_costs_by_service,
+        match_costs_to_resources,
+    )
 
     region = _aws_region()
     rows = await get_overview(request)
@@ -334,12 +381,14 @@ async def get_costs(request: Request, days: int = 30):
             "error": resource_costs["_error"],
         }
 
-    enriched = match_costs_to_resources(resource_costs, service_costs, rows)
+    enriched = match_costs_to_resources(resource_costs, service_costs, list(rows))
     total = sum(r.get("cost_monthly") or 0 for r in enriched)
 
     return {
         "resources": enriched,
-        "service_costs": {k: v for k, v in service_costs.items() if not k.startswith("_")},
+        "service_costs": {
+            k: v for k, v in service_costs.items() if not k.startswith("_")
+        },
         "total_monthly": round(total, 2),
         "currency": "USD",
         "days": days,

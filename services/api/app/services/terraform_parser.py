@@ -163,7 +163,19 @@ def parse_dot_graph(dot: str) -> dict:
         if n.startswith("data."):
             node_type = "data"
         elif n.startswith("module."):
-            node_type = "module"
+            # Check if this is a module-prefixed resource (e.g. module.foo.aws_instance.bar)
+            # Strip all module.xxx. prefixes to find the inner resource
+            inner = n
+            while inner.startswith("module."):
+                parts = inner.split(".", 2)
+                if len(parts) < 3:
+                    break
+                inner = parts[2]
+            # If inner part looks like a resource (type.name), treat as resource
+            if not inner.startswith("module.") and "." in inner:
+                node_type = "resource"
+            else:
+                node_type = "module"
         nodes.append(_enrich_node(n, node_type))
 
     return {"nodes": nodes, "edges": edges}
@@ -277,8 +289,16 @@ def _enrich_node(raw_id: str, node_type: str) -> dict:
             node["label"] = raw_id.removeprefix("output.")
         return node
 
+    # Strip module prefixes: "module.foo.aws_instance.web" → "aws_instance.web"
+    inner_id = raw_id
+    while inner_id.startswith("module."):
+        segs = inner_id.split(".", 2)
+        if len(segs) < 3:
+            break
+        inner_id = segs[2]
+
     # Extract resource type and name: "aws_instance.web" or "data.aws_ami.latest"
-    parts = raw_id.split(".")
+    parts = inner_id.split(".")
     if node_type == "data" and len(parts) >= 3:
         res_type = parts[1]
         res_name = ".".join(parts[2:])
@@ -307,19 +327,41 @@ def _enrich_node(raw_id: str, node_type: str) -> dict:
 
 
 SERVICE_MAP = {
-    "s3": "S3", "ec2": "EC2", "ecs": "ECS", "ecr": "ECR", "efs": "EFS",
-    "iam": "IAM", "rds": "RDS", "db": "RDS", "lambda": "Lambda",
-    "lb": "Load Balancer", "alb": "Load Balancer",
-    "route53": "Route 53", "cloudfront": "CloudFront",
-    "cloudwatch": "CloudWatch", "kms": "KMS", "acm": "ACM",
-    "dynamodb": "DynamoDB", "sqs": "SQS", "sns": "SNS",
-    "secretsmanager": "Secrets Manager", "ssm": "SSM",
-    "vpc": "VPC", "subnet": "VPC", "internet_gateway": "VPC",
-    "nat_gateway": "VPC", "eip": "VPC", "route_table": "VPC",
-    "security_group": "VPC", "vpc_endpoint": "VPC",
-    "service_discovery": "Cloud Map", "scheduler": "EventBridge",
-    "codebuild": "CodeBuild", "codepipeline": "CodePipeline",
-    "api_gateway": "API Gateway", "apigatewayv2": "API Gateway",
+    "s3": "S3",
+    "ec2": "EC2",
+    "ecs": "ECS",
+    "ecr": "ECR",
+    "efs": "EFS",
+    "iam": "IAM",
+    "rds": "RDS",
+    "db": "RDS",
+    "lambda": "Lambda",
+    "lb": "Load Balancer",
+    "alb": "Load Balancer",
+    "route53": "Route 53",
+    "cloudfront": "CloudFront",
+    "cloudwatch": "CloudWatch",
+    "kms": "KMS",
+    "acm": "ACM",
+    "dynamodb": "DynamoDB",
+    "sqs": "SQS",
+    "sns": "SNS",
+    "secretsmanager": "Secrets Manager",
+    "ssm": "SSM",
+    "vpc": "VPC",
+    "subnet": "VPC",
+    "internet_gateway": "VPC",
+    "nat_gateway": "VPC",
+    "eip": "VPC",
+    "route_table": "VPC",
+    "security_group": "VPC",
+    "vpc_endpoint": "VPC",
+    "service_discovery": "Cloud Map",
+    "scheduler": "EventBridge",
+    "codebuild": "CodeBuild",
+    "codepipeline": "CodePipeline",
+    "api_gateway": "API Gateway",
+    "apigatewayv2": "API Gateway",
 }
 
 
