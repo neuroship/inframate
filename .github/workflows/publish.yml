@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish (for example: v0.2.8)"
+        required: true
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
 
 jobs:
   publish:
@@ -79,11 +87,11 @@ jobs:
         run: |
           cp ../../README.md .
           uv sync
-          uv run pyinstaller --onefile --name inframate --collect-data app app/cli.py
+          uv run --with pyinstaller pyinstaller --onefile --name inframate --collect-data app app/cli.py
 
       - name: Package binary
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.RELEASE_TAG }}
           ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p release
@@ -97,8 +105,8 @@ jobs:
         with:
           name: binary-${{ matrix.arch }}
           path: |
-            inframate-${{ github.ref_name }}-macos-${{ matrix.arch }}.tar.gz
-            inframate-${{ github.ref_name }}-macos-${{ matrix.arch }}.tar.gz.sha256
+            inframate-${{ env.RELEASE_TAG }}-macos-${{ matrix.arch }}.tar.gz
+            inframate-${{ env.RELEASE_TAG }}-macos-${{ matrix.arch }}.tar.gz.sha256
 
   upload-release-assets:
     needs: build-binaries
@@ -116,6 +124,8 @@ jobs:
       - name: Upload assets to GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           files: |
             release-assets/*.tar.gz
             release-assets/*.sha256
@@ -134,7 +144,7 @@ jobs:
       - name: Compute formula metadata
         id: meta
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.RELEASE_TAG }}
         run: |
           ARM_FILE="inframate-${VERSION}-macos-arm64.tar.gz"
           INTEL_FILE="inframate-${VERSION}-macos-x86_64.tar.gz"
