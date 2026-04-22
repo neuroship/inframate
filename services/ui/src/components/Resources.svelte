@@ -663,7 +663,7 @@
           return cost != null ? { ...row, cost_monthly: cost } : row;
         });
         allRows = updated;
-        totalCost = costData.total_monthly;
+        totalCost = updated.reduce((sum, r) => sum + (r.cost_monthly || 0), 0);
         filteredCost = totalCost;
         applyFilters();
       }
