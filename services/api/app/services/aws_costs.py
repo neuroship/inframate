@@ -104,9 +104,7 @@ async def get_costs_by_resource(
                     date = result["TimePeriod"]["Start"]
                     for group in result.get("Groups", []):
                         resource_id = group["Keys"][0]
-                        amount = float(
-                            group["Metrics"]["UnblendedCost"]["Amount"]
-                        )
+                        amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
                         currency = group["Metrics"]["UnblendedCost"]["Unit"]
 
                         if resource_id not in costs:
@@ -176,9 +174,7 @@ async def get_costs_by_service(
                 date = result["TimePeriod"]["Start"]
                 for group in result.get("Groups", []):
                     service = group["Keys"][0]
-                    amount = float(
-                        group["Metrics"]["UnblendedCost"]["Amount"]
-                    )
+                    amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
                     currency = group["Metrics"]["UnblendedCost"]["Unit"]
 
                     if service not in costs:
@@ -188,9 +184,7 @@ async def get_costs_by_service(
                             "currency": currency,
                         }
                     costs[service]["total"] += amount
-                    costs[service]["daily"].append(
-                        {"date": date, "cost": amount}
-                    )
+                    costs[service]["daily"].append({"date": date, "cost": amount})
 
     except Exception as e:
         return {"_error": str(e)}
@@ -279,14 +273,14 @@ def match_costs_to_resources(
     for r in resources:
         arn = r.get("arn", "")
         attrs = r.get("attributes", {})
-        rid = attrs.get("id", "") or r.get("id", "")
-        name = attrs.get("name", "") or attrs.get("bucket", "") or r.get("resource_name", "")
-
-        cost = (
-            cost_lookup.get(arn)
-            or cost_lookup.get(rid)
-            or cost_lookup.get(name)
+        rid = attrs.get("id", "") or r.get("cloud_id", "") or r.get("id", "")
+        name = (
+            attrs.get("name", "")
+            or attrs.get("bucket", "")
+            or r.get("resource_name", "")
         )
+
+        cost = cost_lookup.get(arn) or cost_lookup.get(rid) or cost_lookup.get(name)
 
         if cost:
             r["cost_monthly"] = round(cost["total"], 2)
@@ -302,6 +296,7 @@ def match_costs_to_resources(
     if service_costs and not any(k.startswith("_") for k in service_costs):
         # Group unmatched resources by billing service
         from collections import defaultdict
+
         service_groups = defaultdict(list)
         for r in resources:
             if r["cost_monthly"] is not None:
