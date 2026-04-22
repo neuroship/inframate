@@ -370,23 +370,36 @@
       <div class="px-2 py-1.5 text-[10px] uppercase tracking-wider text-base-content/40 font-semibold">
         Files
       </div>
-      {#each files as file}
-        <button
-          class="w-full text-left px-2 py-1 text-xs font-mono hover:bg-base-300/60 transition-colors flex items-center gap-1.5 {selectedFile === file ? 'bg-base-300 text-primary' : 'text-base-content/70'}"
-          onclick={() => selectFile(file)}
-        >
-          {#if file.endsWith('.tf')}
-            <span class="icon-[tabler--file-code] size-3.5 flex-shrink-0 text-violet-400/70"></span>
-          {:else if file.endsWith('.json')}
-            <span class="icon-[tabler--braces] size-3.5 flex-shrink-0 text-amber-400/70"></span>
-          {:else}
-            <span class="icon-[tabler--file-text] size-3.5 flex-shrink-0 text-emerald-400/70"></span>
-          {/if}
-          <span class="truncate">{file}</span>
-          {#if selectedFile === file && isDirty}
-            <span class="size-1.5 rounded-full bg-warning flex-shrink-0 ms-auto"></span>
-          {/if}
-        </button>
+      {#each Object.entries(files.reduce((groups, f) => {
+        const idx = f.lastIndexOf('/');
+        const dir = idx === -1 ? '.' : f.substring(0, idx);
+        (groups[dir] ??= []).push(f);
+        return groups;
+      }, {})).sort(([a], [b]) => a === '.' ? -1 : b === '.' ? 1 : a.localeCompare(b)) as [dir, groupFiles]}
+        {#if dir !== '.'}
+          <div class="px-2 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40 font-semibold flex items-center gap-1">
+            <span class="icon-[tabler--folder] size-3 flex-shrink-0 text-amber-400/60"></span>
+            {dir}
+          </div>
+        {/if}
+        {#each groupFiles as file}
+          <button
+            class="w-full text-left py-1 text-xs font-mono hover:bg-base-300/60 transition-colors flex items-center gap-1.5 {selectedFile === file ? 'bg-base-300 text-primary' : 'text-base-content/70'} {dir !== '.' ? 'pl-4 pr-2' : 'px-2'}"
+            onclick={() => selectFile(file)}
+          >
+            {#if file.endsWith('.tf')}
+              <span class="icon-[tabler--file-code] size-3.5 flex-shrink-0 text-violet-400/70"></span>
+            {:else if file.endsWith('.json')}
+              <span class="icon-[tabler--braces] size-3.5 flex-shrink-0 text-amber-400/70"></span>
+            {:else}
+              <span class="icon-[tabler--file-text] size-3.5 flex-shrink-0 text-emerald-400/70"></span>
+            {/if}
+            <span class="truncate">{file.split('/').pop()}</span>
+            {#if selectedFile === file && isDirty}
+              <span class="size-1.5 rounded-full bg-warning flex-shrink-0 ms-auto"></span>
+            {/if}
+          </button>
+        {/each}
       {/each}
     {/if}
   </div>

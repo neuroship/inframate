@@ -40,10 +40,17 @@ def parse_tf_files(workspace_path: str) -> dict:
 
 def list_tf_files(workspace_path: str) -> list[str]:
     files = []
-    for fname in sorted(os.listdir(workspace_path)):
-        if fname.endswith((".tf", ".tfvars", ".tfvars.json")):
-            files.append(fname)
-    return files
+    real_root = os.path.realpath(workspace_path)
+    for dirpath, _dirnames, filenames in os.walk(real_root):
+        # Skip hidden directories and .terraform
+        parts = os.path.relpath(dirpath, real_root).split(os.sep)
+        if any(p.startswith(".") for p in parts if p != "."):
+            continue
+        for fname in filenames:
+            if fname.endswith((".tf", ".tfvars", ".tfvars.json")):
+                rel = os.path.relpath(os.path.join(dirpath, fname), real_root)
+                files.append(rel)
+    return sorted(files)
 
 
 def read_file(workspace_path: str, filename: str) -> str | None:
