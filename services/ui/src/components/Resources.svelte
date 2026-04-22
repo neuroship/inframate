@@ -8,7 +8,7 @@
     streamAwsDelete, checkAwsDeletePreconditions,
   } from "../lib/api.js";
   import { lastActionError } from "../lib/stores.js";
-  import { getCachedResources, setCachedResources, setCachedCosts, getCachedCosts } from "../lib/cache.js";
+  import { getCachedResources, setCachedResources, setCachedCosts, getCachedCosts, clearCache } from "../lib/cache.js";
   import { marked } from "marked";
   import ConfirmModal from "./ConfirmModal.svelte";
   import DiffModal from "./DiffModal.svelte";
@@ -587,6 +587,7 @@
   }
 
   function refreshPlan() {
+    clearCache();
     planRefreshing = true;
     loadPhase = "Running terraform plan...";
     loadLog = "";

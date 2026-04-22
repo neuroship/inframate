@@ -1,51 +1,65 @@
 /**
- * Browser-side cache for resource data using sessionStorage.
- * Avoids re-fetching terraform plan/cloud scan/costs on page refresh.
- * Data is cleared when the browser tab is closed (sessionStorage behavior).
+ * Browser-side cache for resource data.
+ * Uses both an in-memory cache (survives SPA navigation) and localStorage
+ * (survives full page refresh). Heavy fields are stripped before persisting
+ * to stay within the ~5 MB localStorage quota.
  */
 
 const KEYS = {
   resources: "inframate:resources",
-  costs: "inframate:costs",
   totalCost: "inframate:totalCost",
 };
 
-function get(key) {
+// In-memory mirror — always works regardless of storage quota.
+let _memResources = null;
+let _memTotalCost = null;
+
+function storageGet(key) {
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function set(key, value) {
+function storageSet(key, value) {
   try {
-    sessionStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // storage full or unavailable — silently ignore
+    // quota exceeded — in-memory cache still works
   }
 }
 
+/** Strip heavy/redundant fields to shrink the payload for localStorage. */
+function toLite(rows) {
+  return rows.map(({ before, after, attributes, cloud_extra, ...rest }) => rest);
+}
+
 export function getCachedResources() {
-  return get(KEYS.resources);
+  if (_memResources) return _memResources;
+  return storageGet(KEYS.resources);
 }
 
 export function setCachedResources(rows) {
-  set(KEYS.resources, rows);
+  _memResources = rows;
+  storageSet(KEYS.resources, toLite(rows));
 }
 
 export function getCachedCosts() {
-  const totalCost = get(KEYS.totalCost);
-  return totalCost != null ? { totalCost } : null;
+  const v = _memTotalCost ?? storageGet(KEYS.totalCost);
+  return v != null ? { totalCost: v } : null;
 }
 
 export function setCachedCosts(totalCost) {
-  set(KEYS.totalCost, totalCost);
+  _memTotalCost = totalCost;
+  storageSet(KEYS.totalCost, totalCost);
 }
 
 export function clearCache() {
+  _memResources = null;
+  _memTotalCost = null;
   for (const key of Object.values(KEYS)) {
-    sessionStorage.removeItem(key);
+    localStorage.removeItem(key);
   }
 }
