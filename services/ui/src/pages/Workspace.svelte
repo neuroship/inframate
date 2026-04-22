@@ -83,16 +83,19 @@
     </div>
 
     <div class="flex flex-1 overflow-hidden">
-      <div class="flex-1 overflow-auto">
-        {#if activeTab === "resources"}
+      <div class="flex-1 overflow-hidden relative">
+        <div class="absolute inset-0 overflow-auto" class:hidden={activeTab !== "resources"}>
           <Resources onnavigate={handleNavigateToFile} />
-        {:else if activeTab === "costs"}
+        </div>
+        <div class="absolute inset-0 overflow-auto" class:hidden={activeTab !== "costs"}>
           <Costs />
-        {:else if activeTab === "files"}
+        </div>
+        <div class="absolute inset-0 overflow-auto" class:hidden={activeTab !== "files"}>
           <FileEditor {openFile} {openLine} {openSeq} />
-        {:else if activeTab === "vars"}
+        </div>
+        <div class="absolute inset-0 overflow-auto" class:hidden={activeTab !== "vars"}>
           <VarsPanel />
-        {/if}
+        </div>
       </div>
       {#if showAiSidebar}
         <AiSidebar
