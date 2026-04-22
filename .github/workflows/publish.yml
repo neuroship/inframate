@@ -165,6 +165,7 @@ jobs:
             homepage "https://github.com/neuroship/inframate"
             license "AGPL-3.0-only"
 
+            version "${{ steps.meta.outputs.version }}"
             url "${{ steps.meta.outputs.arm_url }}"
             sha256 "${{ steps.meta.outputs.arm_sha }}"
 
