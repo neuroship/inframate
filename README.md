@@ -8,7 +8,7 @@ A CLI tool for managing Terraform infrastructure. Browse resources, apply change
 # uv (recommended)
 uv tool install inframate
 
-# Homebrew
+# Homebrew (prebuilt macOS binary, no Python dependency install)
 brew install inframate
 
 # pip / pipx
