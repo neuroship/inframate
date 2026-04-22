@@ -87,7 +87,7 @@ jobs:
         run: |
           cp ../../README.md .
           uv sync
-          uv run --with pyinstaller pyinstaller --onefile --name inframate --collect-data app app/cli.py
+          uv run --with pyinstaller python -m PyInstaller --onefile --name inframate --collect-data app app/cli.py
 
       - name: Package binary
         env:
