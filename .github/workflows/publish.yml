@@ -59,8 +59,6 @@ jobs:
         include:
           - runner: macos-14
             arch: arm64
-          - runner: macos-13
-            arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
@@ -147,14 +145,10 @@ jobs:
           VERSION: ${{ env.RELEASE_TAG }}
         run: |
           ARM_FILE="inframate-${VERSION}-macos-arm64.tar.gz"
-          INTEL_FILE="inframate-${VERSION}-macos-x86_64.tar.gz"
           ARM_SHA=$(awk '{print $1}' "release-assets/${ARM_FILE}.sha256")
-          INTEL_SHA=$(awk '{print $1}' "release-assets/${INTEL_FILE}.sha256")
           echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
           echo "arm_url=https://github.com/${{ github.repository }}/releases/download/${VERSION}/${ARM_FILE}" >> $GITHUB_OUTPUT
           echo "arm_sha=${ARM_SHA}" >> $GITHUB_OUTPUT
-          echo "intel_url=https://github.com/${{ github.repository }}/releases/download/${VERSION}/${INTEL_FILE}" >> $GITHUB_OUTPUT
-          echo "intel_sha=${INTEL_SHA}" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@v4
         with:
@@ -171,15 +165,10 @@ jobs:
             homepage "https://github.com/neuroship/inframate"
             license "AGPL-3.0-only"
 
-            on_macos do
-              if Hardware::CPU.arm?
-                url "${{ steps.meta.outputs.arm_url }}"
-                sha256 "${{ steps.meta.outputs.arm_sha }}"
-              else
-                url "${{ steps.meta.outputs.intel_url }}"
-                sha256 "${{ steps.meta.outputs.intel_sha }}"
-              end
-            end
+            url "${{ steps.meta.outputs.arm_url }}"
+            sha256 "${{ steps.meta.outputs.arm_sha }}"
+
+            depends_on arch: :arm64
 
             def install
               bin.install "inframate"
