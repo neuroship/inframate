@@ -53,6 +53,7 @@
   // Costs
   let costsLoading = $state(false);
   let totalCost = $state(null);
+  let filteredCost = $state(0);
 
   // Terraform actions
   let actionOutput = $state("");
@@ -663,6 +664,7 @@
         });
         allRows = updated;
         totalCost = costData.total_monthly;
+        filteredCost = totalCost;
         applyFilters();
       }
     } catch (e) {
@@ -714,6 +716,7 @@
       );
     }
     gridApi.setGridOption("rowData", filtered);
+    filteredCost = filtered.reduce((sum, r) => sum + (r.cost_monthly || 0), 0);
   }
 
   function openResourceDetail(resource) {
@@ -1144,7 +1147,12 @@
             {#if costsLoading}
               <span class="loading loading-spinner loading-xs"></span>
             {:else}
-              <span class="font-mono font-medium">${totalCost?.toFixed(2)}</span>
+              {@const isFiltered = activeStatusFilter !== "all" || activeActionFilter !== "all" || searchText.trim()}
+              <span class="font-mono font-medium">${filteredCost.toFixed(2)}</span>
+              {#if isFiltered && totalCost !== filteredCost}
+                <span class="text-base-content/20">/</span>
+                <span class="font-mono text-base-content/40">${totalCost?.toFixed(2)}</span>
+              {/if}
               <span class="text-base-content/30">/mo</span>
             {/if}
           </div>
