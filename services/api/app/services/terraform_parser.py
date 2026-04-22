@@ -6,35 +6,83 @@ import hcl2
 
 
 def get_resource_locations(workspace_path: str) -> dict[str, dict]:
-    """Scan .tf files and return {type.name: {file, line}} for each resource block."""
+    """Scan .tf files and return {type.name: {file, line}} for each resource block.
+
+    For resources inside subdirectories, also stores module-qualified keys
+    (e.g. module.vpc.aws_subnet.main) by resolving module source paths.
+    """
     locations = {}
-    pattern = re.compile(r'^resource\s+"(\w+)"\s+"(\w+)"')
-    for fname in sorted(os.listdir(workspace_path)):
+    real_root = os.path.realpath(workspace_path)
+    res_pattern = re.compile(r'^resource\s+"(\w+)"\s+"(\w+)"')
+    mod_pattern = re.compile(r'^module\s+"(\w+)"')
+    src_pattern = re.compile(r'^\s*source\s*=\s*"([^"]+)"')
+
+    # First pass: build module_name -> resolved source dir mapping from root .tf files
+    source_to_modules: dict[str, list[str]] = {}
+    for fname in sorted(os.listdir(real_root)):
         if not fname.endswith(".tf"):
             continue
-        filepath = os.path.join(workspace_path, fname)
-        with open(filepath) as f:
-            for lineno, line in enumerate(f, start=1):
-                m = pattern.match(line)
-                if m:
-                    key = f"{m.group(1)}.{m.group(2)}"
-                    locations[key] = {"file": fname, "line": lineno}
+        current_module = None
+        with open(os.path.join(real_root, fname)) as f:
+            for line in f:
+                mm = mod_pattern.match(line)
+                if mm:
+                    current_module = mm.group(1)
+                    continue
+                if current_module:
+                    sm = src_pattern.match(line)
+                    if sm:
+                        src = os.path.normpath(sm.group(1))
+                        source_to_modules.setdefault(src, []).append(current_module)
+                        current_module = None
+                    elif line.strip() == "}":
+                        current_module = None
+
+    # Second pass: scan all .tf files for resource blocks
+    for dirpath, _dirnames, filenames in os.walk(real_root):
+        parts = os.path.relpath(dirpath, real_root).split(os.sep)
+        if any(p.startswith(".") for p in parts if p != "."):
+            continue
+        for fname in sorted(filenames):
+            if not fname.endswith(".tf"):
+                continue
+            filepath = os.path.join(dirpath, fname)
+            rel = os.path.relpath(filepath, real_root)
+            rel_dir = os.path.relpath(dirpath, real_root)
+            with open(filepath) as f:
+                for lineno, line in enumerate(f, start=1):
+                    m = res_pattern.match(line)
+                    if m:
+                        bare_key = f"{m.group(1)}.{m.group(2)}"
+                        loc = {"file": rel, "line": lineno}
+                        locations[bare_key] = loc
+                        # Also store module-qualified key
+                        if rel_dir != ".":
+                            norm_dir = os.path.normpath(rel_dir)
+                            for mod_name in source_to_modules.get(norm_dir, []):
+                                locations[f"module.{mod_name}.{bare_key}"] = loc
     return locations
 
 
 def parse_tf_files(workspace_path: str) -> dict:
     """Parse all .tf files in a workspace and return combined config."""
     combined = {}
-    for fname in sorted(os.listdir(workspace_path)):
-        if not fname.endswith(".tf"):
+    real_root = os.path.realpath(workspace_path)
+    for dirpath, _dirnames, filenames in os.walk(real_root):
+        parts = os.path.relpath(dirpath, real_root).split(os.sep)
+        if any(p.startswith(".") for p in parts if p != "."):
             continue
-        filepath = os.path.join(workspace_path, fname)
-        with open(filepath) as f:
-            try:
-                parsed = hcl2.load(f)
-                combined[fname] = parsed
-            except Exception as e:
-                combined[fname] = {"error": str(e)}
+        for fname in sorted(filenames):
+            if not fname.endswith(".tf"):
+                continue
+            filepath = os.path.join(dirpath, fname)
+            rel = os.path.relpath(filepath, real_root)
+            with open(filepath) as f:
+                try:
+                    parsed = hcl2.load(f)
+                    combined[rel] = parsed
+                except Exception as e:
+                    combined[rel] = {"error": str(e)}
     return combined
 
 

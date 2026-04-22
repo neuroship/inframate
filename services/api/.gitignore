@@ -17,3 +17,4 @@ instance/
 .DS_Store
 Thumbs.db
 build/
+app/static/
