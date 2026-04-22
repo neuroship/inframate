@@ -18,3 +18,4 @@ instance/
 Thumbs.db
 build/
 app/static/
+*.egg-info
