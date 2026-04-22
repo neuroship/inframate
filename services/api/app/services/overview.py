@@ -5,6 +5,26 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# In-memory cache for unified overview (post-cloud-scan rows including unmanaged).
+# Keyed by tf_path.
+_unified_cache: dict[str, list[dict]] = {}
+
+
+def get_cached_unified(tf_path: str) -> list[dict] | None:
+    """Return cached unified overview rows (with unmanaged resources) if available."""
+    return _unified_cache.get(tf_path)
+
+
+def save_cached_unified(tf_path: str, rows: list[dict]):
+    """Cache unified overview rows after cloud scan."""
+    _unified_cache[tf_path] = rows
+
+
+def clear_cached_unified(tf_path: str):
+    """Clear cached unified overview."""
+    _unified_cache.pop(tf_path, None)
+
+
 from app.services.plan_cache import get_cached_plan, save_cached_plan
 from app.services.terraform_cli import get_plan_json, get_graph_dot, get_state
 from app.services.terraform_parser import (

@@ -208,6 +208,11 @@ async def get_overview_stream(request: Request):
     tf_path = _tf_path(request)
 
     async def event_stream():
+        # Clear unified cache since we're re-planning from scratch
+        from app.services.overview import clear_cached_unified
+
+        clear_cached_unified(tf_path)
+
         yield f"data: {_json.dumps({'type': 'phase', 'message': 'Reading terraform graph...'})}\n\n"
         dot = await get_graph_dot(tf_path)
         graph = parse_dot_graph(dot)
@@ -296,6 +301,10 @@ async def cloud_scan(request: Request):
         yield f"data: {json.dumps({'type': 'phase', 'message': 'Matching resources...'})}\n\n"
         unified = merge_with_cloud(overview_rows, aws_resources, region)
 
+        from app.services.overview import save_cached_unified
+
+        save_cached_unified(tf_path, unified)
+
         yield f"data: {json.dumps({'type': 'result', 'data': unified})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
@@ -365,9 +374,15 @@ async def get_costs(request: Request, days: int = 30):
         get_costs_by_service,
         match_costs_to_resources,
     )
+    from app.services.overview import get_cached_unified
 
     region = _aws_region()
-    rows = await get_overview(request)
+    # Use unified overview (with unmanaged resources) if available from cloud scan
+    cached_unified = get_cached_unified(_tf_path(request))
+    if cached_unified:
+        rows = list(cached_unified)
+    else:
+        rows = await get_overview(request)
 
     resource_costs, service_costs = await asyncio.gather(
         get_costs_by_resource({}, region, [], days),
