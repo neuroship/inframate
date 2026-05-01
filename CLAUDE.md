@@ -72,8 +72,11 @@ inframate
   ├── Load data (terraform graph + plan + cloud scan)
   ├── Plan error? → AI fix loop (diagnose → file changes + commands → re-plan)
   └── TUI loop:
-      ├── Enter → Apply (confirm → stream apply → AI fix on failure)
-      ├── x → Destroy (confirm → terraform destroy / AWS API → AI fix on failure)
+      ├── Enter → Show resource detail
+      ├── r → Force re-plan (invalidate plan cache, re-run terraform plan)
+      ├── R → Apply (confirm → stream apply → AI fix on failure)
+      ├── X → Destroy selected (confirm → terraform destroy / AWS API → AI fix on failure)
+      ├── F5 → Refresh (cached plan reused if .tf files unchanged)
       ├── $ → Load costs (fetch AWS billing → show in tree)
       ├── / → Search resources
       └── q → Quit

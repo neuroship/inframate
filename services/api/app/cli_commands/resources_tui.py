@@ -303,8 +303,9 @@ class ResourcesApp(App):
         # Selection & actions
         Binding("space", "toggle_select", "Select", priority=True),
         Binding("enter", "show_detail", "Detail", priority=True),
-        Binding("r", "apply", "Apply", priority=True),
-        Binding("x", "destroy_selected", "Destroy selected", priority=True),
+        Binding("r", "force_refresh", "Force plan", priority=True),
+        Binding("R", "apply", "Apply", priority=True),
+        Binding("X", "destroy_selected", "Destroy selected", priority=True),
         # Costs & refresh
         Binding("s", "summarize", "Summarize", priority=True),
         Binding("$", "load_costs", "Costs", priority=True),
@@ -351,7 +352,7 @@ class ResourcesApp(App):
             " [blue]S[/]=State  [magenta]C[/]=Code  [cyan]W[/]=Cloud   "
             "Status: [dim]a[/]ll [dim]m[/]anaged [dim]p[/]ending [dim]d[/]rift [dim]u[/]nmanaged [dim]o[/]rphaned   "
             "Action: [dim]1[/]create [dim]2[/]update [dim]3[/]destroy [dim]4[/]replace [dim]0[/]clear   "
-            "[dim]s[/]=summary [dim]/[/]=search [dim]$[/]=costs [dim]F5[/]=refresh [dim]space[/]=select [dim]enter[/]=detail [dim]r[/]=apply [dim]x[/]=destroy"
+            "[dim]s[/]=summary [dim]/[/]=search [dim]$[/]=costs [dim]F5[/]=refresh [dim]r[/]=force-plan [dim]space[/]=select [dim]enter[/]=detail [dim]R[/]=apply [dim]X[/]=destroy"
         ))
 
         if self.credential_expiry and self.credential_expiry.get("expires_at"):
@@ -451,6 +452,9 @@ class ResourcesApp(App):
     def action_refresh(self) -> None:
         self.exit(result=("refresh", []))
 
+    def action_force_refresh(self) -> None:
+        self.exit(result=("force_refresh", []))
+
     def action_summarize(self) -> None:
         self.exit(result=("summarize", []))
 
@@ -496,7 +500,7 @@ class ResourcesApp(App):
         if n > 0:
             bar.add_class("has-selection")
             bar.update(Text.from_markup(
-                f" [bold]{n}[/] selected  —  [bold]r[/]=apply  [bold]x[/]=destroy  [bold]space[/]=toggle"
+                f" [bold]{n}[/] selected  —  [bold]R[/]=apply  [bold]X[/]=destroy  [bold]space[/]=toggle"
             ))
         else:
             bar.remove_class("has-selection")

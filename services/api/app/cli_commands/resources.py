@@ -138,6 +138,12 @@ def run_resources(
                 rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
                 show_costs = False
                 continue
+            elif action == "force_refresh":
+                from app.services.plan_cache import invalidate_cache
+                invalidate_cache(project_dir)
+                rows, warnings, plan_raw_output = asyncio.run(_load_data(project_dir, service, no_cloud))
+                show_costs = False
+                continue
             elif action == "load_costs":
                 rows = asyncio.run(_load_costs(project_dir, rows))
                 show_costs = True

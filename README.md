@@ -80,11 +80,12 @@ Each resource also shows three indicators: **S** (in state), **C** (in code), **
 |-----|--------|
 | `Enter` | Show resource detail (attributes, changes, tags) |
 | `Space` | Toggle resource selection |
-| `r` | Apply (all planned changes, or selected only) |
-| `x` | Destroy selected resources |
+| `r` | Force re-plan (invalidate cache, re-run terraform plan) |
+| `R` | Apply (all planned changes, or selected only) |
+| `X` | Destroy selected resources |
 | `s` | AI plan summary (prioritized change overview) |
 | `$` | Load and display AWS costs |
-| `F5` | Refresh (re-read terraform + cloud data) |
+| `F5` | Refresh (re-read terraform + cloud data, may use cached plan) |
 | `q` | Quit |
 
 When apply or destroy fails, inframate streams AI diagnosis, suggests file changes and commands (e.g. `terraform import`, `terraform state rm`), and offers to apply fixes — in a loop until the issue is resolved.
