@@ -116,9 +116,10 @@ async def chat_session_stream(
         )
     # Append conversation history (user/assistant messages)
     for msg in history:
-        role = msg.get("role", "user")
+        role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
+        content = msg.content if hasattr(msg, "content") else msg.get("content", "")
         if role in ("user", "assistant"):
-            messages.append({"role": role, "content": msg.get("content", "")})
+            messages.append({"role": role, "content": content})
 
     stream = await client.chat.completions.create(
         model=model, messages=messages, stream=True
@@ -176,7 +177,7 @@ async def summarize_plan_stream(
         name = r.get("resource_name", "unnamed")
         address = r.get("id", "")
 
-        line = f"- {action.upper()}: {rtype} \"{name}\" ({address})"
+        line = f'- {action.upper()}: {rtype} "{name}" ({address})'
 
         before = r.get("before", {}) or {}
         after = r.get("after", {}) or {}

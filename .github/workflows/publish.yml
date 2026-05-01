@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish (for example: v0.2.8)"
+        required: true
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
 
 jobs:
   publish:
@@ -43,89 +51,104 @@ jobs:
         with:
           packages-dir: services/api/dist/
 
-  update-homebrew:
-    needs: publish
-    runs-on: ubuntu-latest
+  build-binaries:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: Get version from pyproject.toml
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build UI
+        working-directory: services/ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build standalone binary
+        working-directory: services/api
+        run: |
+          cp ../../README.md .
+          uv sync
+          uv run --with pyinstaller python -m PyInstaller --onefile --name inframate --collect-data app app/cli.py
+
+      - name: Package binary
+        env:
+          VERSION: ${{ env.RELEASE_TAG }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p release
+          cp services/api/dist/inframate release/
+          ASSET_NAME="inframate-${VERSION}-macos-${ARCH}.tar.gz"
+          tar -C release -czf "$ASSET_NAME" inframate
+          shasum -a 256 "$ASSET_NAME" > "$ASSET_NAME.sha256"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.arch }}
+          path: |
+            inframate-${{ env.RELEASE_TAG }}-macos-${{ matrix.arch }}.tar.gz
+            inframate-${{ env.RELEASE_TAG }}-macos-${{ matrix.arch }}.tar.gz.sha256
+
+  upload-release-assets:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Upload assets to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.sha256
+
+  update-homebrew:
+    needs: [publish, upload-release-assets]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Compute formula metadata
         id: meta
+        env:
+          VERSION: ${{ env.RELEASE_TAG }}
         run: |
-          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('services/api/pyproject.toml','rb'))['project']['version'])")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Get SHA from PyPI
-        id: pypi
-        run: |
-          VERSION=${{ steps.meta.outputs.version }}
-          for i in $(seq 1 30); do
-            RESPONSE=$(curl -sf "https://pypi.org/pypi/inframate/${VERSION}/json") && break
-            echo "Waiting for PyPI... (attempt $i)"
-            sleep 10
-          done
-          URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print([u['url'] for u in d['urls'] if u['packagetype']=='sdist'][0])")
-          SHA=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print([u['digests']['sha256'] for u in d['urls'] if u['packagetype']=='sdist'][0])")
-          echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "sha256=$SHA" >> $GITHUB_OUTPUT
-
-      - name: Generate resource blocks
-        run: |
-          pip install ${{ steps.pypi.outputs.url }}
-          python3 << 'PYSCRIPT' > /tmp/resources.txt
-          import importlib.metadata, json, urllib.request, re
-
-          SKIP = {"inframate", "pip", "setuptools", "wheel"}
-          # Rust/maturin packages — provided as wheel resources per platform
-          RUST_PKGS = {"jiter", "pydantic-core", "pydantic_core", "watchfiles"}
-          seen = set()
-
-          def find_wheel(urls, abi_tag, platform_tag):
-              for u in urls:
-                  fn = u["filename"]
-                  if fn.endswith(".whl") and abi_tag in fn and platform_tag in fn:
-                      return u
-              return None
-
-          for dist in sorted(importlib.metadata.distributions(), key=lambda d: d.metadata["Name"].lower()):
-              name = dist.metadata["Name"]
-              lower = name.lower()
-              version = dist.metadata["Version"]
-              if lower in SKIP or lower in seen:
-                  continue
-              seen.add(lower)
-              url = f"https://pypi.org/pypi/{name}/{version}/json"
-              with urllib.request.urlopen(url) as resp:
-                  data = json.loads(resp.read())
-
-              if lower in RUST_PKGS or lower.replace("-", "_") in RUST_PKGS:
-                  # Emit platform-specific wheel resources (nounzip to keep .whl intact)
-                  urls = data["urls"]
-                  for arch, platform_tag in [("arm", "macosx_11_0_arm64"), ("intel", "macosx_10_12_x86_64")]:
-                      whl = find_wheel(urls, "cp313-cp313", platform_tag)
-                      if not whl:
-                          whl = find_wheel(urls, "cp313", platform_tag)
-                      if whl:
-                          print(f'on_{arch} do')
-                          print(f'  resource "{name}" do')
-                          print(f'    url "{whl["url"]}", using: :nounzip')
-                          print(f'    sha256 "{whl["digests"]["sha256"]}"')
-                          print(f'  end')
-                          print(f'end')
-                          print()
-              else:
-                  sdist = next((u for u in data["urls"] if u["packagetype"] == "sdist"), None)
-                  if sdist:
-                      print(f'resource "{name}" do')
-                      print(f'  url "{sdist["url"]}"')
-                      print(f'  sha256 "{sdist["digests"]["sha256"]}"')
-                      print(f'end')
-                      print()
-          PYSCRIPT
+          ARM_FILE="inframate-${VERSION}-macos-arm64.tar.gz"
+          ARM_SHA=$(awk '{print $1}' "release-assets/${ARM_FILE}.sha256")
+          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+          echo "arm_url=https://github.com/${{ github.repository }}/releases/download/${VERSION}/${ARM_FILE}" >> $GITHUB_OUTPUT
+          echo "arm_sha=${ARM_SHA}" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@v4
         with:
@@ -134,41 +157,22 @@ jobs:
           path: homebrew-tap
 
       - name: Generate formula
-        env:
-          TARBALL_URL: ${{ steps.pypi.outputs.url }}
-          TARBALL_SHA: ${{ steps.pypi.outputs.sha256 }}
         run: |
           mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/inframate.rb << ENDFORMULA
           class Inframate < Formula
-            include Language::Python::Virtualenv
-
             desc "CLI tool for managing Terraform infrastructure with a local web UI"
             homepage "https://github.com/neuroship/inframate"
-            url "${TARBALL_URL}"
-            sha256 "${TARBALL_SHA}"
             license "AGPL-3.0-only"
 
-            depends_on "python@3.13"
+            version "${{ steps.meta.outputs.version }}"
+            url "${{ steps.meta.outputs.arm_url }}"
+            sha256 "${{ steps.meta.outputs.arm_sha }}"
 
-            skip_clean "libexec"
-
-          $(sed 's/^/  /' /tmp/resources.txt)
+            depends_on arch: :arm64
 
             def install
-              venv = virtualenv_create(libexec, "python3.13")
-              resources.each do |r|
-                r.stage do
-                  whl = Dir.glob("*.whl").first
-                  if whl
-                    system libexec/"bin/python", "-m", "pip", "install", "-v",
-                           "--no-deps", "--ignore-installed", whl
-                  else
-                    venv.pip_install Pathname.pwd
-                  end
-                end
-              end
-              venv.pip_install_and_link buildpath
+              bin.install "inframate"
             end
 
             test do

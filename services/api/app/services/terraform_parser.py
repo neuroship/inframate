@@ -6,44 +6,99 @@ import hcl2
 
 
 def get_resource_locations(workspace_path: str) -> dict[str, dict]:
-    """Scan .tf files and return {type.name: {file, line}} for each resource block."""
+    """Scan .tf files and return {type.name: {file, line}} for each resource block.
+
+    For resources inside subdirectories, also stores module-qualified keys
+    (e.g. module.vpc.aws_subnet.main) by resolving module source paths.
+    """
     locations = {}
-    pattern = re.compile(r'^resource\s+"(\w+)"\s+"(\w+)"')
-    for fname in sorted(os.listdir(workspace_path)):
+    real_root = os.path.realpath(workspace_path)
+    res_pattern = re.compile(r'^resource\s+"(\w+)"\s+"(\w+)"')
+    mod_pattern = re.compile(r'^module\s+"(\w+)"')
+    src_pattern = re.compile(r'^\s*source\s*=\s*"([^"]+)"')
+
+    # First pass: build module_name -> resolved source dir mapping from root .tf files
+    source_to_modules: dict[str, list[str]] = {}
+    for fname in sorted(os.listdir(real_root)):
         if not fname.endswith(".tf"):
             continue
-        filepath = os.path.join(workspace_path, fname)
-        with open(filepath) as f:
-            for lineno, line in enumerate(f, start=1):
-                m = pattern.match(line)
-                if m:
-                    key = f"{m.group(1)}.{m.group(2)}"
-                    locations[key] = {"file": fname, "line": lineno}
+        current_module = None
+        with open(os.path.join(real_root, fname)) as f:
+            for line in f:
+                mm = mod_pattern.match(line)
+                if mm:
+                    current_module = mm.group(1)
+                    continue
+                if current_module:
+                    sm = src_pattern.match(line)
+                    if sm:
+                        src = os.path.normpath(sm.group(1))
+                        source_to_modules.setdefault(src, []).append(current_module)
+                        current_module = None
+                    elif line.strip() == "}":
+                        current_module = None
+
+    # Second pass: scan all .tf files for resource blocks
+    for dirpath, _dirnames, filenames in os.walk(real_root):
+        parts = os.path.relpath(dirpath, real_root).split(os.sep)
+        if any(p.startswith(".") for p in parts if p != "."):
+            continue
+        for fname in sorted(filenames):
+            if not fname.endswith(".tf"):
+                continue
+            filepath = os.path.join(dirpath, fname)
+            rel = os.path.relpath(filepath, real_root)
+            rel_dir = os.path.relpath(dirpath, real_root)
+            with open(filepath) as f:
+                for lineno, line in enumerate(f, start=1):
+                    m = res_pattern.match(line)
+                    if m:
+                        bare_key = f"{m.group(1)}.{m.group(2)}"
+                        loc = {"file": rel, "line": lineno}
+                        locations[bare_key] = loc
+                        # Also store module-qualified key
+                        if rel_dir != ".":
+                            norm_dir = os.path.normpath(rel_dir)
+                            for mod_name in source_to_modules.get(norm_dir, []):
+                                locations[f"module.{mod_name}.{bare_key}"] = loc
     return locations
 
 
 def parse_tf_files(workspace_path: str) -> dict:
     """Parse all .tf files in a workspace and return combined config."""
     combined = {}
-    for fname in sorted(os.listdir(workspace_path)):
-        if not fname.endswith(".tf"):
+    real_root = os.path.realpath(workspace_path)
+    for dirpath, _dirnames, filenames in os.walk(real_root):
+        parts = os.path.relpath(dirpath, real_root).split(os.sep)
+        if any(p.startswith(".") for p in parts if p != "."):
             continue
-        filepath = os.path.join(workspace_path, fname)
-        with open(filepath) as f:
-            try:
-                parsed = hcl2.load(f)
-                combined[fname] = parsed
-            except Exception as e:
-                combined[fname] = {"error": str(e)}
+        for fname in sorted(filenames):
+            if not fname.endswith(".tf"):
+                continue
+            filepath = os.path.join(dirpath, fname)
+            rel = os.path.relpath(filepath, real_root)
+            with open(filepath) as f:
+                try:
+                    parsed = hcl2.load(f)
+                    combined[rel] = parsed
+                except Exception as e:
+                    combined[rel] = {"error": str(e)}
     return combined
 
 
 def list_tf_files(workspace_path: str) -> list[str]:
     files = []
-    for fname in sorted(os.listdir(workspace_path)):
-        if fname.endswith((".tf", ".tfvars", ".tfvars.json")):
-            files.append(fname)
-    return files
+    real_root = os.path.realpath(workspace_path)
+    for dirpath, _dirnames, filenames in os.walk(real_root):
+        # Skip hidden directories and .terraform
+        parts = os.path.relpath(dirpath, real_root).split(os.sep)
+        if any(p.startswith(".") for p in parts if p != "."):
+            continue
+        for fname in filenames:
+            if fname.endswith((".tf", ".tfvars", ".tfvars.json")):
+                rel = os.path.relpath(os.path.join(dirpath, fname), real_root)
+                files.append(rel)
+    return sorted(files)
 
 
 def read_file(workspace_path: str, filename: str) -> str | None:
@@ -163,7 +218,19 @@ def parse_dot_graph(dot: str) -> dict:
         if n.startswith("data."):
             node_type = "data"
         elif n.startswith("module."):
-            node_type = "module"
+            # Check if this is a module-prefixed resource (e.g. module.foo.aws_instance.bar)
+            # Strip all module.xxx. prefixes to find the inner resource
+            inner = n
+            while inner.startswith("module."):
+                parts = inner.split(".", 2)
+                if len(parts) < 3:
+                    break
+                inner = parts[2]
+            # If inner part looks like a resource (type.name), treat as resource
+            if not inner.startswith("module.") and "." in inner:
+                node_type = "resource"
+            else:
+                node_type = "module"
         nodes.append(_enrich_node(n, node_type))
 
     return {"nodes": nodes, "edges": edges}
@@ -277,8 +344,16 @@ def _enrich_node(raw_id: str, node_type: str) -> dict:
             node["label"] = raw_id.removeprefix("output.")
         return node
 
+    # Strip module prefixes: "module.foo.aws_instance.web" → "aws_instance.web"
+    inner_id = raw_id
+    while inner_id.startswith("module."):
+        segs = inner_id.split(".", 2)
+        if len(segs) < 3:
+            break
+        inner_id = segs[2]
+
     # Extract resource type and name: "aws_instance.web" or "data.aws_ami.latest"
-    parts = raw_id.split(".")
+    parts = inner_id.split(".")
     if node_type == "data" and len(parts) >= 3:
         res_type = parts[1]
         res_name = ".".join(parts[2:])
@@ -307,19 +382,41 @@ def _enrich_node(raw_id: str, node_type: str) -> dict:
 
 
 SERVICE_MAP = {
-    "s3": "S3", "ec2": "EC2", "ecs": "ECS", "ecr": "ECR", "efs": "EFS",
-    "iam": "IAM", "rds": "RDS", "db": "RDS", "lambda": "Lambda",
-    "lb": "Load Balancer", "alb": "Load Balancer",
-    "route53": "Route 53", "cloudfront": "CloudFront",
-    "cloudwatch": "CloudWatch", "kms": "KMS", "acm": "ACM",
-    "dynamodb": "DynamoDB", "sqs": "SQS", "sns": "SNS",
-    "secretsmanager": "Secrets Manager", "ssm": "SSM",
-    "vpc": "VPC", "subnet": "VPC", "internet_gateway": "VPC",
-    "nat_gateway": "VPC", "eip": "VPC", "route_table": "VPC",
-    "security_group": "VPC", "vpc_endpoint": "VPC",
-    "service_discovery": "Cloud Map", "scheduler": "EventBridge",
-    "codebuild": "CodeBuild", "codepipeline": "CodePipeline",
-    "api_gateway": "API Gateway", "apigatewayv2": "API Gateway",
+    "s3": "S3",
+    "ec2": "EC2",
+    "ecs": "ECS",
+    "ecr": "ECR",
+    "efs": "EFS",
+    "iam": "IAM",
+    "rds": "RDS",
+    "db": "RDS",
+    "lambda": "Lambda",
+    "lb": "Load Balancer",
+    "alb": "Load Balancer",
+    "route53": "Route 53",
+    "cloudfront": "CloudFront",
+    "cloudwatch": "CloudWatch",
+    "kms": "KMS",
+    "acm": "ACM",
+    "dynamodb": "DynamoDB",
+    "sqs": "SQS",
+    "sns": "SNS",
+    "secretsmanager": "Secrets Manager",
+    "ssm": "SSM",
+    "vpc": "VPC",
+    "subnet": "VPC",
+    "internet_gateway": "VPC",
+    "nat_gateway": "VPC",
+    "eip": "VPC",
+    "route_table": "VPC",
+    "security_group": "VPC",
+    "vpc_endpoint": "VPC",
+    "service_discovery": "Cloud Map",
+    "scheduler": "EventBridge",
+    "codebuild": "CodeBuild",
+    "codepipeline": "CodePipeline",
+    "api_gateway": "API Gateway",
+    "apigatewayv2": "API Gateway",
 }
 
 

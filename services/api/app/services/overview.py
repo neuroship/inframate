@@ -5,9 +5,35 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# In-memory cache for unified overview (post-cloud-scan rows including unmanaged).
+# Keyed by tf_path.
+_unified_cache: dict[str, list[dict]] = {}
+
+
+def get_cached_unified(tf_path: str) -> list[dict] | None:
+    """Return cached unified overview rows (with unmanaged resources) if available."""
+    return _unified_cache.get(tf_path)
+
+
+def save_cached_unified(tf_path: str, rows: list[dict]):
+    """Cache unified overview rows after cloud scan."""
+    _unified_cache[tf_path] = rows
+
+
+def clear_cached_unified(tf_path: str):
+    """Clear cached unified overview."""
+    _unified_cache.pop(tf_path, None)
+
+
 from app.services.plan_cache import get_cached_plan, save_cached_plan
 from app.services.terraform_cli import get_plan_json, get_graph_dot, get_state
-from app.services.terraform_parser import parse_dot_graph, get_resource_locations, _enrich_node, _extract_service, AWS_RESOURCES
+from app.services.terraform_parser import (
+    parse_dot_graph,
+    get_resource_locations,
+    _enrich_node,
+    _extract_service,
+    AWS_RESOURCES,
+)
 from app.services.unified import derive_status
 
 
@@ -71,11 +97,13 @@ def parse_plan_resources(plan_data: dict) -> dict:
     return plan_resources
 
 
-def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | None = None) -> list[dict]:
+def build_overview_rows(
+    graph: dict, plan_resources: dict, locations: dict | None = None
+) -> list[dict]:
     locations = locations or {}
     indexed_lookup: dict[str, list[tuple[str, dict]]] = {}
     for addr, info in plan_resources.items():
-        match = re.match(r'^(.+?)\[', addr)
+        match = re.match(r"^(.+?)\[", addr)
         if match:
             base = match.group(1)
             indexed_lookup.setdefault(base, []).append((addr, info))
@@ -89,19 +117,25 @@ def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | Non
     for node in graph["nodes"]:
         res_type = node.get("resource_type", "")
         res_name = node.get("resource_name", "")
-        base_addr = f"{res_type}.{res_name}" if res_type and res_name else ""
+        # Use the full node id (which includes module prefix) for plan matching,
+        # since plan keys are fully qualified (e.g. module.foo.aws_instance.bar)
+        base_addr = node.get("id", "") if res_type and res_name else ""
 
         if not base_addr:
             skipped_no_addr += 1
             if verbose and len(unmatched_ids) < 5:
-                unmatched_ids.append(f"  no resource_type/name: id={node.get('id', '?')}, type={node.get('type', '?')}")
+                unmatched_ids.append(
+                    f"  no resource_type/name: id={node.get('id', '?')}, type={node.get('type', '?')}"
+                )
             continue
 
         loc = locations.get(base_addr)
 
         plan_info = plan_resources.get(base_addr)
         if plan_info is not None:
-            rows.append(_make_row(node, base_addr, res_type, res_name, plan_info, location=loc))
+            rows.append(
+                _make_row(node, base_addr, res_type, res_name, plan_info, location=loc)
+            )
             matched += 1
             continue
 
@@ -111,10 +145,17 @@ def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | Non
                 idx_match = re.search(r'\["?([^"\]]+)"?\]$', full_addr)
                 idx_label = idx_match.group(1) if idx_match else full_addr
                 display_name = f"{res_name}[{idx_label}]"
-                rows.append(_make_row(
-                    node, full_addr, res_type, display_name, inst_info,
-                    instance_key=idx_label, location=loc,
-                ))
+                rows.append(
+                    _make_row(
+                        node,
+                        full_addr,
+                        res_type,
+                        display_name,
+                        inst_info,
+                        instance_key=idx_label,
+                        location=loc,
+                    )
+                )
             matched += 1
             continue
 
@@ -125,8 +166,11 @@ def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | Non
         logger.debug(
             "build_overview_rows: graph_nodes=%d, plan_keys=%d, matched=%d, "
             "skipped_no_addr=%d, unmatched=%d",
-            len(graph["nodes"]), len(plan_resources), matched,
-            skipped_no_addr, unmatched,
+            len(graph["nodes"]),
+            len(plan_resources),
+            matched,
+            skipped_no_addr,
+            unmatched,
         )
         if skipped_no_addr:
             logger.debug(
@@ -142,7 +186,9 @@ def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | Non
             "build_overview_rows produced 0 rows: %d graph nodes skipped "
             "(no resource_type/name — likely module-prefixed resources), "
             "%d unmatched. Plan has %d keys. Use --verbose for details.",
-            skipped_no_addr, unmatched, len(plan_resources),
+            skipped_no_addr,
+            unmatched,
+            len(plan_resources),
         )
 
     deps = {}
@@ -154,7 +200,9 @@ def build_overview_rows(graph: dict, plan_resources: dict, locations: dict | Non
     return rows
 
 
-def _make_row(node, addr, res_type, res_name, plan_info, instance_key=None, location=None):
+def _make_row(
+    node, addr, res_type, res_name, plan_info, instance_key=None, location=None
+):
     attrs = plan_info.get("attributes", {})
     action = plan_info.get("action", "no-op")
 

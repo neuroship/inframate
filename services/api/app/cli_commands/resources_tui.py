@@ -101,8 +101,12 @@ class ResourceDetailScreen(ModalScreen):
         lines.append("")
 
         # Status & action
-        lines.append(f"  [dim]Status:[/]   [{status_color}]{STATUS_LABELS.get(status, status)}[/]")
-        lines.append(f"  [dim]Action:[/]   [{action_color}]{ACTION_LABELS.get(action, action)}[/]")
+        lines.append(
+            f"  [dim]Status:[/]   [{status_color}]{STATUS_LABELS.get(status, status)}[/]"
+        )
+        lines.append(
+            f"  [dim]Action:[/]   [{action_color}]{ACTION_LABELS.get(action, action)}[/]"
+        )
         lines.append(f"  [dim]Address:[/]  {esc(r.get('id', ''))}")
 
         # Presence
@@ -114,7 +118,9 @@ class ResourceDetailScreen(ModalScreen):
             wd = "[dim]No[/]"
         else:
             wd = "[dim]Unknown[/]"
-        lines.append(f"  [dim]In State:[/] {sd}   [dim]In Code:[/] {cd}   [dim]In Cloud:[/] {wd}")
+        lines.append(
+            f"  [dim]In State:[/] {sd}   [dim]In Code:[/] {cd}   [dim]In Cloud:[/] {wd}"
+        )
 
         # Location
         if r.get("tf_file"):
@@ -164,7 +170,11 @@ class ResourceDetailScreen(ModalScreen):
 
         elif action in ("update", "replace") and before and after:
             lines.append("")
-            label = "[bold yellow]Changes:[/]" if action == "update" else "[bold magenta]Replace (destroy + create):[/]"
+            label = (
+                "[bold yellow]Changes:[/]"
+                if action == "update"
+                else "[bold magenta]Replace (destroy + create):[/]"
+            )
             lines.append(label)
             all_keys = sorted(set(list(before.keys()) + list(after.keys())))
             has_diff = False
@@ -180,9 +190,13 @@ class ResourceDetailScreen(ModalScreen):
                     elif av is None:
                         lines.append(f"  [red]-[/] [dim]{k}:[/] {_fmt_val(bv)}")
                     else:
-                        lines.append(f"  [yellow]~[/] [dim]{k}:[/] {_fmt_val(bv)} → {_fmt_val(av)}")
+                        lines.append(
+                            f"  [yellow]~[/] [dim]{k}:[/] {_fmt_val(bv)} → {_fmt_val(av)}"
+                        )
             if not has_diff:
-                lines.append("  [dim]No attribute changes detected (may be computed)[/]")
+                lines.append(
+                    "  [dim]No attribute changes detected (may be computed)[/]"
+                )
 
         elif action == "no-op":
             # Show current attributes
@@ -191,7 +205,11 @@ class ResourceDetailScreen(ModalScreen):
                 lines.append("")
                 lines.append("[bold]Attributes[/]")
                 for k, v in sorted(attrs.items()):
-                    if v is not None and k not in ("tags", "tags_all", "timeouts") and v != "":
+                    if (
+                        v is not None
+                        and k not in ("tags", "tags_all", "timeouts")
+                        and v != ""
+                    ):
                         lines.append(f"  [dim]{k}:[/] {_fmt_val(v)}")
 
         content = self.query_one("#detail-content", Static)
@@ -315,7 +333,13 @@ class ResourcesApp(App):
         Binding("escape", "close_search", "Close search", show=False, priority=True),
     ]
 
-    def __init__(self, rows: list[dict], warnings: list[str] | None = None, show_costs: bool = False, credential_expiry: dict | None = None):
+    def __init__(
+        self,
+        rows: list[dict],
+        warnings: list[str] | None = None,
+        show_costs: bool = False,
+        credential_expiry: dict | None = None,
+    ):
         super().__init__()
         self.all_rows = rows
         self._warnings = warnings or []
@@ -364,6 +388,7 @@ class ResourcesApp(App):
         parts = [f"{len(self.all_rows)} resources"]
         if self.credential_expiry and self.credential_expiry.get("expires_at"):
             from app.services.backend_check import format_time_remaining
+
             remaining = format_time_remaining(self.credential_expiry["expires_at"])
             if remaining == "expired":
                 parts.append("⚠ token expired")
@@ -379,10 +404,15 @@ class ResourcesApp(App):
             rows = [r for r in rows if r.get("action") == self.action_filter]
         if self.search_query:
             q = self.search_query.lower()
-            rows = [r for r in rows if q in (r.get("resource_name", "") or "").lower()
-                    or q in (r.get("display_type", r.get("resource_type", "")) or "").lower()
-                    or q in (r.get("service", "") or "").lower()
-                    or q in (r.get("id", "") or "").lower()]
+            rows = [
+                r
+                for r in rows
+                if q in (r.get("resource_name", "") or "").lower()
+                or q
+                in (r.get("display_type", r.get("resource_type", "")) or "").lower()
+                or q in (r.get("service", "") or "").lower()
+                or q in (r.get("id", "") or "").lower()
+            ]
         return rows
 
     def action_filter_status(self, status: str) -> None:
@@ -420,14 +450,20 @@ class ResourcesApp(App):
     def action_destroy_selected(self) -> None:
         selected = [r for r in self.all_rows if r.get("id") in self.selected_ids]
         if not selected:
-            self.notify("No resources selected. Use Space to select.", severity="warning")
+            self.notify(
+                "No resources selected. Use Space to select.", severity="warning"
+            )
             return
         self.exit(result=("destroy", selected))
 
     def action_apply(self) -> None:
         selected = [r for r in self.all_rows if r.get("id") in self.selected_ids]
         if not selected:
-            actionable = [r for r in self.all_rows if r.get("action") and r.get("action") != "no-op"]
+            actionable = [
+                r
+                for r in self.all_rows
+                if r.get("action") and r.get("action") != "no-op"
+            ]
             if not actionable:
                 self.notify("No changes to apply.", severity="warning")
                 return
@@ -444,7 +480,9 @@ class ResourcesApp(App):
             node.toggle()
             return
         self._detail_open = True
-        self.push_screen(ResourceDetailScreen(node.data), callback=self._on_detail_closed)
+        self.push_screen(
+            ResourceDetailScreen(node.data), callback=self._on_detail_closed
+        )
 
     def _on_detail_closed(self, _result=None) -> None:
         self._detail_open = False
@@ -512,7 +550,11 @@ class ResourcesApp(App):
 
         sd = "[blue]S[/]" if r.get("in_state") else "[dim]·[/]"
         cd = "[magenta]C[/]" if r.get("in_code") else "[dim]·[/]"
-        wd = "[cyan]W[/]" if r.get("in_cloud") else ("[dim]·[/]" if r.get("in_cloud") is not None else "[dim]?[/]")
+        wd = (
+            "[cyan]W[/]"
+            if r.get("in_cloud")
+            else ("[dim]·[/]" if r.get("in_cloud") is not None else "[dim]?[/]")
+        )
 
         name = esc(r.get("resource_name", ""))
         action = r.get("action", "")
@@ -538,7 +580,9 @@ class ResourcesApp(App):
                     cost_str = f" [green]${cost:.2f}/mo[/]"
 
         check = "[bold green]✓[/]" if selected else " "
-        return Text.from_markup(f"{check} {sd}{cd}{wd} [{color}]●[/] {name}{action_str}{cost_str}")
+        return Text.from_markup(
+            f"{check} {sd}{cd}{wd} [{color}]●[/] {name}{action_str}{cost_str}"
+        )
 
     def _rebuild(self) -> None:
         rows = self._filtered_rows()
@@ -577,10 +621,18 @@ class ResourcesApp(App):
             else:
                 action_parts.append(f"[{color}]  {ACTION_LABELS[a]} {c}[/]")
 
-        is_filtered = self.status_filter != "all" or self.action_filter != "all" or self.search_query
-        showing = f"showing {len(rows)}/{len(self.all_rows)}" if is_filtered else f"{len(self.all_rows)} total"
+        is_filtered = (
+            self.status_filter != "all"
+            or self.action_filter != "all"
+            or self.search_query
+        )
+        showing = (
+            f"showing {len(rows)}/{len(self.all_rows)}"
+            if is_filtered
+            else f"{len(self.all_rows)} total"
+        )
         if self.search_query:
-            showing += f" [dim]search: \"{self.search_query}\"[/]"
+            showing += f' [dim]search: "{self.search_query}"[/]'
 
         summary_text = f"{'  '.join(status_parts)}"
         if action_parts:
@@ -588,9 +640,13 @@ class ResourcesApp(App):
 
         # Cost summary
         if self.show_costs:
-            total_cost = sum(r.get("cost_monthly") or 0 for r in self.all_rows)
-            if total_cost > 0:
-                summary_text += f"   [dim]│[/]   [bold]${total_cost:,.2f}/mo[/]"
+            filtered_cost = sum(r.get("cost_monthly") or 0 for r in rows)
+            if filtered_cost > 0:
+                if is_filtered:
+                    total_cost = sum(r.get("cost_monthly") or 0 for r in self.all_rows)
+                    summary_text += f"   [dim]│[/]   [bold]${filtered_cost:,.2f}[/][dim]/${total_cost:,.2f}/mo[/]"
+                else:
+                    summary_text += f"   [dim]│[/]   [bold]${filtered_cost:,.2f}/mo[/]"
 
         summary_text += f"   [dim]{showing}[/]"
 
@@ -599,18 +655,25 @@ class ResourcesApp(App):
         filter_parts = []
         if self.status_filter != "all":
             color = STATUS_COLORS.get(self.status_filter, "white")
-            filter_parts.append(f"status: [{color}]{STATUS_LABELS.get(self.status_filter, self.status_filter)}[/]")
+            filter_parts.append(
+                f"status: [{color}]{STATUS_LABELS.get(self.status_filter, self.status_filter)}[/]"
+            )
         if self.action_filter != "all":
             color = ACTION_COLORS.get(self.action_filter, "white")
-            filter_parts.append(f"action: [{color}]{ACTION_LABELS.get(self.action_filter, self.action_filter)}[/]")
+            filter_parts.append(
+                f"action: [{color}]{ACTION_LABELS.get(self.action_filter, self.action_filter)}[/]"
+            )
         if self.search_query:
-            filter_parts.append(f"search: [bold]\"{self.search_query}\"[/]")
+            filter_parts.append(f'search: [bold]"{self.search_query}"[/]')
 
         if filter_parts:
-            filter_bar.update(Text.from_markup(
-                " [bold yellow]Filter:[/]  " + "  [dim]│[/]  ".join(filter_parts) +
-                f"  [dim]({len(rows)}/{len(self.all_rows)})[/]  —  [dim]a[/]=clear status  [dim]0[/]=clear action  [dim]esc[/]=clear search"
-            ))
+            filter_bar.update(
+                Text.from_markup(
+                    " [bold yellow]Filter:[/]  "
+                    + "  [dim]│[/]  ".join(filter_parts)
+                    + f"  [dim]({len(rows)}/{len(self.all_rows)})[/]  —  [dim]a[/]=clear status  [dim]0[/]=clear action  [dim]esc[/]=clear search"
+                )
+            )
             filter_bar.add_class("active")
         else:
             filter_bar.remove_class("active")
@@ -623,23 +686,31 @@ class ResourcesApp(App):
         tree = self.query_one("#tree", TreeWidget)
         tree.clear()
 
-        groups: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+        groups: dict[str, dict[str, list[dict]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         for r in rows:
             svc = r.get("service", "") or "Other"
             rtype = r.get("display_type", r.get("resource_type", "")) or "unknown"
             groups[svc][rtype].append(r)
 
-        sorted_svcs = sorted(groups, key=lambda s: sum(len(v) for v in groups[s].values()), reverse=True)
+        sorted_svcs = sorted(
+            groups, key=lambda s: sum(len(v) for v in groups[s].values()), reverse=True
+        )
 
         for svc in sorted_svcs:
             types = groups[svc]
             svc_count = sum(len(rs) for rs in types.values())
             svc_cost_str = ""
             if self.show_costs:
-                svc_cost = sum(r.get("cost_monthly") or 0 for rs in types.values() for r in rs)
+                svc_cost = sum(
+                    r.get("cost_monthly") or 0 for rs in types.values() for r in rs
+                )
                 if svc_cost > 0:
                     svc_cost_str = f"  [bold]${svc_cost:,.2f}/mo[/]"
-            svc_label = Text.from_markup(f"[bold cyan]{svc}[/] [dim]({svc_count})[/]{svc_cost_str}")
+            svc_label = Text.from_markup(
+                f"[bold cyan]{svc}[/] [dim]({svc_count})[/]{svc_cost_str}"
+            )
             svc_node = tree.root.add(svc_label)
 
             sorted_types = sorted(types, key=lambda t: len(types[t]), reverse=True)

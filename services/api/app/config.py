@@ -90,6 +90,7 @@ def get_terraform_config() -> dict:
     return {
         "var_file": tf.get("var_file"),
         "backend_config": tf.get("backend_config"),
+        "data_dir": tf.get("data_dir"),
     }
 
 

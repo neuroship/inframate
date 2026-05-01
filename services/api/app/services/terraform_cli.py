@@ -13,6 +13,10 @@ _VAR_FILE_COMMANDS = {"plan", "apply", "destroy", "import"}
 
 def _build_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
     env = {**os.environ}
+    tf_config = config.get_terraform_config()
+    data_dir = tf_config.get("data_dir")
+    if data_dir and "TF_DATA_DIR" not in env:
+        env["TF_DATA_DIR"] = data_dir
     if extra_env:
         env.update(extra_env)
     return env

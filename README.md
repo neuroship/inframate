@@ -8,7 +8,7 @@ A CLI tool for managing Terraform infrastructure. Browse resources, apply change
 # uv (recommended)
 uv tool install inframate
 
-# Homebrew
+# Homebrew (prebuilt macOS binary, no Python dependency install)
 brew install inframate
 
 # pip / pipx
@@ -111,10 +111,11 @@ ai:
 #   api_token: ollama
 #   model: llama3
 
-# Custom var-file and backend config (applied automatically)
+# Custom var-file, backend config, and data dir (applied automatically)
 terraform:
-  var_file: env/dev/terraform.tfvars         # used in plan, apply, destroy
+  var_file: env/dev/terraform.tfvars         # used in plan, apply, destroy, import
   backend_config: env/dev/backend.hcl        # used in init
+  data_dir: ./terraform-data/dev/.terraform  # sets TF_DATA_DIR for all commands
 ```
 
 The `.inframate/` directory also stores plan cache and temporary plan files. You may want to add `.inframate/` to your `.gitignore`.

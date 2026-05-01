@@ -8,6 +8,7 @@
     streamAwsDelete, checkAwsDeletePreconditions,
   } from "../lib/api.js";
   import { lastActionError } from "../lib/stores.js";
+  import { getCachedResources, setCachedResources, setCachedCosts, getCachedCosts, clearCache } from "../lib/cache.js";
   import { marked } from "marked";
   import ConfirmModal from "./ConfirmModal.svelte";
   import DiffModal from "./DiffModal.svelte";
@@ -53,6 +54,7 @@
   // Costs
   let costsLoading = $state(false);
   let totalCost = $state(null);
+  let filteredCost = $state(0);
 
   // Terraform actions
   let actionOutput = $state("");
@@ -579,11 +581,13 @@
       activeStatusFilter = "all";
       computeStats(data);
       gridApi?.setGridOption("rowData", data);
+      setCachedResources(data);
       triggerCloudScan();
     } catch (_) {}
   }
 
   function refreshPlan() {
+    clearCache();
     planRefreshing = true;
     loadPhase = "Running terraform plan...";
     loadLog = "";
@@ -595,12 +599,13 @@
           if (msg.type === "phase") { loadPhase = msg.message; loadLog = ""; }
           else if (msg.type === "log") { loadLog = msg.message; }
           else if (msg.type === "result") {
-            allRows = msg.data;
-            computeStats(msg.data);
-            activeStatusFilter = "all";
-            gridApi?.setGridOption("rowData", msg.data);
-            gridApi?.setGridOption("loading", false);
-          }
+             allRows = msg.data;
+             computeStats(msg.data);
+             activeStatusFilter = "all";
+             gridApi?.setGridOption("rowData", msg.data);
+             gridApi?.setGridOption("loading", false);
+             setCachedResources(msg.data);
+           }
         } catch (_) {}
       },
       () => {
@@ -633,6 +638,7 @@
             computeStats(msg.data);
             applyFilters();
             cloudScanned = true;
+            setCachedResources(msg.data);
           }
         } catch (_) {}
       },
@@ -662,8 +668,11 @@
           return cost != null ? { ...row, cost_monthly: cost } : row;
         });
         allRows = updated;
-        totalCost = costData.total_monthly;
+        totalCost = updated.reduce((sum, r) => sum + (r.cost_monthly || 0), 0);
+        filteredCost = totalCost;
         applyFilters();
+        setCachedResources(updated);
+        setCachedCosts(totalCost);
       }
     } catch (e) {
       console.error("fetchCosts error:", e);
@@ -714,6 +723,7 @@
       );
     }
     gridApi.setGridOption("rowData", filtered);
+    filteredCost = filtered.reduce((sum, r) => sum + (r.cost_monthly || 0), 0);
   }
 
   function openResourceDetail(resource) {
@@ -775,6 +785,20 @@
   // --- Lifecycle ---
 
   onMount(async () => {
+    // Try browser cache first to avoid re-fetching on page refresh
+    const cached = getCachedResources();
+    if (cached && cached.length > 0) {
+      const cachedCosts = getCachedCosts();
+      if (cachedCosts) totalCost = cachedCosts.totalCost;
+      filteredCost = totalCost;
+      allRows = cached;
+      computeStats(cached);
+      initGrid(cached);
+      loading = false;
+      return;
+    }
+
+    // No cache — fetch from API
     try {
       const data = await getOverview();
 
@@ -782,6 +806,7 @@
         computeStats(data);
         initGrid(data);
         loading = false;
+        setCachedResources(data);
         triggerCloudScan();
         fetchCosts();
       } else {
@@ -1144,7 +1169,12 @@
             {#if costsLoading}
               <span class="loading loading-spinner loading-xs"></span>
             {:else}
-              <span class="font-mono font-medium">${totalCost?.toFixed(2)}</span>
+              {@const isFiltered = activeStatusFilter !== "all" || activeActionFilter !== "all" || searchText.trim()}
+              <span class="font-mono font-medium">${filteredCost.toFixed(2)}</span>
+              {#if isFiltered && totalCost !== filteredCost}
+                <span class="text-base-content/20">/</span>
+                <span class="font-mono text-base-content/40">${totalCost?.toFixed(2)}</span>
+              {/if}
               <span class="text-base-content/30">/mo</span>
             {/if}
           </div>
