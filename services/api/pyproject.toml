@@ -1,6 +1,6 @@
 [project]
 name = "inframate"
-version = "0.2.23"
+version = "0.2.25"
 description = "An all-in-one local interface for navigating, operating, and understanding your Terraform infrastructure"
 readme = "README.md"
 license = "AGPL-3.0-only"

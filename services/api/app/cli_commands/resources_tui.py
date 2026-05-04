@@ -74,6 +74,8 @@ class ResourceDetailScreen(ModalScreen):
         Binding("escape", "dismiss", "Close", priority=True),
         Binding("enter", "dismiss", "Close", priority=True),
         Binding("q", "dismiss", "Close", priority=True),
+        Binding("c", "copy_arn", "Copy ARN", priority=True),
+        Binding("i", "copy_id", "Copy ID", priority=True),
     ]
 
     def __init__(self, resource: dict):
@@ -216,7 +218,25 @@ class ResourceDetailScreen(ModalScreen):
         content.update(Text.from_markup("\n".join(lines)))
 
         footer = self.query_one("#detail-footer", Static)
-        footer.update(Text.from_markup("[dim]Press Escape to close[/]"))
+        footer.update(Text.from_markup(
+            "[dim]Esc=close   c=copy ARN   i=copy ID[/]"
+        ))
+
+    def action_copy_arn(self) -> None:
+        arn = self.resource.get("arn")
+        if not arn:
+            self.app.notify("No ARN available", severity="warning")
+            return
+        self.app.copy_to_clipboard(arn)
+        self.app.notify(f"ARN copied: {arn}", timeout=3)
+
+    def action_copy_id(self) -> None:
+        rid = self.resource.get("cloud_id") or self.resource.get("id")
+        if not rid:
+            self.app.notify("No ID available", severity="warning")
+            return
+        self.app.copy_to_clipboard(rid)
+        self.app.notify(f"ID copied: {rid}", timeout=3)
 
 
 def _fmt_val(v) -> str:

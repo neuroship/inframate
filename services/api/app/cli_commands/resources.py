@@ -1,4 +1,5 @@
 import asyncio
+import difflib
 import json as json_mod
 import logging
 import os
@@ -17,6 +18,45 @@ logger = logging.getLogger(__name__)
 
 FILE_PATTERN = re.compile(r'File:\s*(\S+)\s*\n```\w*\n(.*?)```', re.DOTALL)
 CMD_PATTERN = re.compile(r'```(?:bash|sh|shell)\n(.*?)```', re.DOTALL)
+
+
+def _resolve_target_path(project_dir: str, ai_filename: str) -> tuple[str, bool]:
+    """Resolve an AI-suggested filename to an actual file path within project_dir.
+
+    Returns (relative_path, exists). Strategy:
+    1. Strip leading './', drop absolute prefix, normalize.
+    2. If normalized path exists, use it.
+    3. Otherwise look for unique basename match across project .tf files.
+    4. Fallback to normalized path (will be created on write).
+    """
+    from app.services.terraform_parser import list_tf_files
+
+    name = ai_filename.strip().lstrip("/").removeprefix("./")
+    name = os.path.normpath(name)
+
+    full = os.path.join(project_dir, name)
+    if os.path.isfile(full):
+        return name, True
+
+    base = os.path.basename(name)
+    candidates = [f for f in list_tf_files(project_dir) if os.path.basename(f) == base]
+    if len(candidates) == 1:
+        return candidates[0], True
+
+    return name, False
+
+
+def _render_diff(existing: str, new: str, path: str) -> Syntax:
+    """Build a unified diff Syntax block (existing → new)."""
+    diff = difflib.unified_diff(
+        existing.splitlines(keepends=True),
+        new.splitlines(keepends=True),
+        fromfile=f"a/{path}",
+        tofile=f"b/{path}",
+        n=3,
+    )
+    text = "".join(diff) or "(no textual changes)"
+    return Syntax(text, "diff", theme="monokai", padding=1, word_wrap=True)
 
 
 def _needs_reinit(plan_output: str) -> bool:
@@ -212,7 +252,7 @@ async def _ai_fix_loop(project_dir: str, command: str, error_output: str, rerun_
         return False
 
     from app.services.terraform_cli import run_terraform
-    from app.services.terraform_parser import load_project_context, write_file
+    from app.services.terraform_parser import load_project_context, read_file, write_file
     from app.services.ai_service import diagnose_stream
     from app.services.plan_cache import invalidate_cache
 
@@ -242,20 +282,38 @@ async def _ai_fix_loop(project_dir: str, command: str, error_output: str, rerun_
 
         applied_something = False
 
-        # File changes
+        # File changes — show diff vs existing, resolve AI path to actual file
         if changes:
             console.print(f"  [bold]{len(changes)} file change(s) suggested:[/]\n")
+            resolved: list[tuple[str, str, bool]] = []  # (rel_path, new_content, existed)
             for filename, content in changes:
-                console.print(f"  [cyan]{filename}[/]")
-                console.print(Syntax(content.strip(), "hcl", theme="monokai", line_numbers=True, padding=1))
+                rel_path, existed = _resolve_target_path(project_dir, filename)
+                resolved.append((rel_path, content, existed))
+
+                header = f"  [cyan]{rel_path}[/]"
+                if rel_path != filename.strip().lstrip("/").removeprefix("./"):
+                    header += f" [muted](resolved from {filename})[/]"
+                if not existed:
+                    header += " [warning](new file)[/]"
+                console.print(header)
+
+                new_content = content.strip() + ("\n" if not content.endswith("\n") else "")
+                existing = read_file(project_dir, rel_path) if existed else ""
+                if existed:
+                    console.print(_render_diff(existing or "", new_content, rel_path))
+                else:
+                    console.print(Syntax(new_content, "hcl", theme="monokai", line_numbers=True, padding=1))
                 console.print()
 
             if Confirm.ask("  Apply file changes?", default=True, console=console):
-                for filename, content in changes:
-                    if write_file(project_dir, filename, content):
-                        console.print(f"    [success]✓ Updated {filename}[/]")
+                for rel_path, content, _existed in resolved:
+                    parent = os.path.dirname(os.path.join(project_dir, rel_path))
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    if write_file(project_dir, rel_path, content):
+                        console.print(f"    [success]✓ Updated {rel_path}[/]")
                     else:
-                        console.print(f"    [error]✕ Failed to write {filename}[/]")
+                        console.print(f"    [error]✕ Failed to write {rel_path}[/]")
                 applied_something = True
 
         # Commands
