@@ -82,6 +82,7 @@ async def _ensure_init(project_dir: str):
         console.print("[muted]  terraform: initialized ✓[/]")
     else:
         console.print(f"  [error]terraform init failed:[/] {output.strip()[-200:]}")
+        await _ai_fix_loop(project_dir, "init", output, ["init", "-input=false", "-no-color"])
 
 
 async def _handle_reinit(project_dir: str) -> bool:
@@ -110,7 +111,11 @@ async def _handle_reinit(project_dir: str) -> bool:
         return True
     else:
         console.print(f"  [error]terraform init failed:[/] {output.strip()[-200:]}")
-        return False
+        rerun = ["init", "-input=false", f"-{choice}", "-no-color"]
+        fixed = await _ai_fix_loop(project_dir, "init", output, rerun)
+        if fixed:
+            invalidate_cache(project_dir)
+        return fixed
 
 
 def run_resources(
@@ -487,6 +492,7 @@ async def _run_destroy(project_dir: str, tf_resources: list[dict], aws_only: lis
         session = aioboto3.Session(region_name=region)
         console.print(f"\n[bold]Deleting {len(aws_only)} AWS resource(s)...[/]\n")
 
+        failures: list[str] = []
         for r in aws_only:
             name = r.get("resource_name", r.get("cloud_id", ""))
 
@@ -498,6 +504,22 @@ async def _run_destroy(project_dir: str, tf_resources: list[dict], aws_only: lis
                 console.print(f"  [green]✓[/] {name}: {result['message']}")
             else:
                 console.print(f"  [red]✕[/] {name}: {result['message']}")
+                rtype = r.get("resource_type") or r.get("display_type") or "?"
+                cid = r.get("cloud_id") or r.get("id") or ""
+                failures.append(
+                    f"AWS API delete failed: type={rtype} name={name} id={cid} region={region}\n"
+                    f"  error: {result['message']}"
+                )
+
+        if failures:
+            console.print()
+            if Confirm.ask(
+                f"  {len(failures)} AWS deletion(s) failed. Diagnose with AI?",
+                default=True,
+                console=console,
+            ):
+                err_output = "\n\n".join(failures)
+                await _ai_fix_loop(project_dir, "destroy", err_output, ["destroy", "-auto-approve", "-no-color"])
 
     console.print("\n[bold]Done.[/]")
 
