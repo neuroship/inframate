@@ -37,6 +37,26 @@ from app.services.terraform_parser import (
 from app.services.unified import derive_status
 
 
+# Resource block names that are generic module conventions and convey
+# no useful identity on their own — fall back to the enclosing module name.
+_GENERIC_RES_NAMES = {"this", "default", "main"}
+
+
+def _friendly_resource_name(addr: str, res_name: str) -> str:
+    """Replace generic block names like `this` with the enclosing module name.
+
+    Many Terraform modules name their primary resource `this`, which makes the
+    UI show duplicate `this[0]` rows when multiple module instances exist. Use
+    the last `module.<name>` segment from the address to disambiguate.
+    """
+    if res_name not in _GENERIC_RES_NAMES:
+        return res_name
+    matches = re.findall(r"module\.([^.\[]+)", addr)
+    if matches:
+        return matches[-1]
+    return res_name
+
+
 def parse_plan_resources(plan_data: dict) -> dict:
     """Parse plan JSON into a lookup of address -> {action, attributes, before, after}."""
     plan_resources = {}
@@ -133,8 +153,9 @@ def build_overview_rows(
 
         plan_info = plan_resources.get(base_addr)
         if plan_info is not None:
+            friendly = _friendly_resource_name(base_addr, res_name)
             rows.append(
-                _make_row(node, base_addr, res_type, res_name, plan_info, location=loc)
+                _make_row(node, base_addr, res_type, friendly, plan_info, location=loc)
             )
             matched += 1
             continue
@@ -144,7 +165,8 @@ def build_overview_rows(
             for full_addr, inst_info in instances:
                 idx_match = re.search(r'\["?([^"\]]+)"?\]$', full_addr)
                 idx_label = idx_match.group(1) if idx_match else full_addr
-                display_name = f"{res_name}[{idx_label}]"
+                friendly = _friendly_resource_name(full_addr, res_name)
+                display_name = f"{friendly}[{idx_label}]"
                 rows.append(
                     _make_row(
                         node,
@@ -327,6 +349,7 @@ async def _rows_from_state(tf_path: str, locations: dict | None = None) -> list[
 
             attrs = res.get("values", {})
             loc = locations.get(addr)
+            friendly_name = _friendly_resource_name(addr, res_name)
 
             aws_info = AWS_RESOURCES.get(res_type)
             display_type = aws_info[0] if aws_info else res_type
@@ -335,13 +358,13 @@ async def _rows_from_state(tf_path: str, locations: dict | None = None) -> list[
 
             row = {
                 "id": addr,
-                "label": f"{display_type}: {res_name}",
+                "label": f"{display_type}: {friendly_name}",
                 "source": "terraform",
                 "display_type": display_type,
                 "service": service,
                 "category": category,
                 "resource_type": res_type,
-                "resource_name": res_name,
+                "resource_name": friendly_name,
                 "instance_key": None,
                 "in_code": True,
                 "in_state": True,
