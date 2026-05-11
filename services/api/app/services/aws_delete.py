@@ -1,5 +1,7 @@
 """Delete AWS resources via boto3 with pre-condition handling."""
 
+import asyncio
+
 import aioboto3
 from botocore.exceptions import ClientError
 
@@ -235,6 +237,78 @@ async def _delete_route53_records(session, region, zone_id, on_progress=None):
             pass
 
 
+async def _teardown_efs(session, region, fs_id, on_progress=None):
+    """Remove replication config, access points, and mount targets before deleting EFS."""
+    async with session.client("efs", region_name=region) as efs:
+        # 1. Replication config (delete from source side; destination becomes deletable)
+        try:
+            resp = await efs.describe_replication_configurations(FileSystemId=fs_id)
+            for cfg in resp.get("Replications", []):
+                source_id = cfg.get("SourceFileSystemId")
+                if source_id:
+                    try:
+                        await efs.delete_replication_configuration(
+                            SourceFileSystemId=source_id
+                        )
+                        if on_progress:
+                            await on_progress(
+                                f"  Deleted replication config (source {source_id})"
+                            )
+                    except ClientError:
+                        pass
+        except ClientError:
+            pass
+
+        # 2. Access points
+        try:
+            paginator = efs.get_paginator("describe_access_points")
+            async for page in paginator.paginate(FileSystemId=fs_id):
+                for ap in page.get("AccessPoints", []):
+                    ap_id = ap.get("AccessPointId")
+                    if ap_id:
+                        try:
+                            await efs.delete_access_point(AccessPointId=ap_id)
+                            if on_progress:
+                                await on_progress(f"  Deleted access point {ap_id}")
+                        except ClientError:
+                            pass
+        except ClientError:
+            pass
+
+        # 3. Mount targets — delete then poll until gone
+        mt_ids = []
+        try:
+            resp = await efs.describe_mount_targets(FileSystemId=fs_id)
+            for mt in resp.get("MountTargets", []):
+                mt_id = mt.get("MountTargetId")
+                if mt_id:
+                    mt_ids.append(mt_id)
+                    try:
+                        await efs.delete_mount_target(MountTargetId=mt_id)
+                        if on_progress:
+                            await on_progress(f"  Deleting mount target {mt_id}")
+                    except ClientError:
+                        pass
+        except ClientError:
+            return
+
+        # 4. Poll until mount targets fully gone (async, takes ~30-60s per AZ)
+        if mt_ids:
+            for _ in range(60):  # max ~5 min
+                await asyncio.sleep(5)
+                try:
+                    resp = await efs.describe_mount_targets(FileSystemId=fs_id)
+                    remaining = len(resp.get("MountTargets", []))
+                except ClientError:
+                    remaining = 0
+                if remaining == 0:
+                    if on_progress:
+                        await on_progress("  Mount targets cleared")
+                    break
+                if on_progress:
+                    await on_progress(f"  Waiting on {remaining} mount target(s)...")
+
+
 # --- Pre-condition checks ---
 
 # Resources that need pre-deletion steps
@@ -262,6 +336,10 @@ PRE_DELETE_INFO = {
     "aws_kms_key": {
         "warning": "The key will be scheduled for deletion with a 7-day waiting period. Resources encrypted with this key will become inaccessible.",
         "action": "Schedule Deletion",
+    },
+    "aws_efs_file_system": {
+        "warning": "Replication config, access points, and mount targets will be deleted first. Mount target cleanup is async and may take 30–60s per AZ.",
+        "action": "Teardown & Delete",
     },
 }
 
@@ -336,6 +414,11 @@ async def delete_resource(
             if on_progress:
                 await on_progress(f"  Clearing DNS records from zone {rid}...")
             await _delete_route53_records(session, region_name, rid, on_progress)
+
+        elif rtype == "aws_efs_file_system":
+            if on_progress:
+                await on_progress(f"  Tearing down EFS {rid}...")
+            await _teardown_efs(session, region_name, rid, on_progress)
 
         # Actual deletion
         async with session.client(svc, region_name=region_name) as client:
