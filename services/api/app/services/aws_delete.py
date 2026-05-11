@@ -43,10 +43,20 @@ def _get_resource_id(resource: dict) -> str:
     rtype = resource.get("type", "") or resource.get("resource_type", "")
 
     def _id():
-        return resource.get("id", "") or resource.get("cloud_id", "")
+        cid = resource.get("cloud_id", "")
+        if cid:
+            return cid
+        attrs = resource.get("attributes", {}) or {}
+        if attrs.get("id"):
+            return attrs["id"]
+        rid = resource.get("id", "")
+        # Strip terraform-address prefix (e.g. "aws_instance.i-abc" -> "i-abc")
+        if rid.startswith("aws_") and "." in rid:
+            return rid.split(".", 1)[1]
+        return rid
 
     def _arn():
-        return resource.get("arn", "") or resource.get("cloud_arn", "")
+        return resource.get("cloud_arn", "") or resource.get("arn", "")
 
     def _name():
         return resource.get("name", "") or resource.get("resource_name", "")
