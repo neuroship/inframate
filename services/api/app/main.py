@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import config
-from app.routers import terraform, ai
+from app.routers import terraform, ai, wiz
 
 
 def create_app(project_dir: str) -> FastAPI:
@@ -14,6 +14,7 @@ def create_app(project_dir: str) -> FastAPI:
 
     app.include_router(terraform.router)
     app.include_router(ai.router)
+    app.include_router(wiz.router)
 
     @app.get("/api/health")
     def health():

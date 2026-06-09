@@ -94,6 +94,15 @@ def get_terraform_config() -> dict:
     }
 
 
+def get_wiz_config() -> dict:
+    wiz = _config.get("wiz") or {}
+    return {
+        "client_id": wiz.get("client_id") or os.environ.get("WIZ_CLIENT_ID", ""),
+        "client_secret": wiz.get("client_secret")
+        or os.environ.get("WIZ_CLIENT_SECRET", ""),
+    }
+
+
 def get_port() -> int:
     return int(_config.get("port", 8000))
 
@@ -117,4 +126,9 @@ def init_config_dir():
             "  # endpoint: http://localhost:11434/v1\n"
             "  # api_token: ollama\n"
             "  # model: llama3\n"
+            "\n"
+            "# Wiz CLI (IaC security scan). Requires the wizcli binary on PATH.\n"
+            "# wiz:\n"
+            "#   client_id: ...\n"
+            "#   client_secret: ...\n"
         )

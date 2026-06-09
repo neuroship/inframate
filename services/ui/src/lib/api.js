@@ -28,6 +28,14 @@ export async function getCosts(days = 30) {
   return request(`/terraform/costs?days=${days}`);
 }
 
+export async function getWizStatus() {
+  return request(`/wiz/status`);
+}
+
+export async function runWizScan() {
+  return request(`/wiz/scan`);
+}
+
 export function streamCloudScan(onMessage, onDone) {
   return streamSSE(`${BASE}/terraform/cloud-scan`, "GET", null, onMessage, onDone);
 }

@@ -5,7 +5,7 @@
   import {
     streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport,
     streamCloudScan, streamChatSession, getFile, updateFile,
-    streamAwsDelete, checkAwsDeletePreconditions,
+    streamAwsDelete, checkAwsDeletePreconditions, runWizScan,
   } from "../lib/api.js";
   import { lastActionError } from "../lib/stores.js";
   import { getCachedResources, setCachedResources, setCachedCosts, getCachedCosts, clearCache } from "../lib/cache.js";
@@ -56,6 +56,12 @@
   let costsLoading = $state(false);
   let totalCost = $state(null);
   let filteredCost = $state(0);
+
+  // Wiz security scan
+  let wizScanning = $state(false);
+  let wizError = $state("");
+  let wizReportUrl = $state("");
+  let wizPopup = $state(null); // { name, address, findings }
 
   // Terraform actions
   let actionOutput = $state("");
@@ -309,6 +315,56 @@
     return el;
   }
 
+  // --- Wiz security ---
+
+  const SEV_RANK = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFORMATIONAL: 1, INFO: 1 };
+  const SEV_COLOR = { CRITICAL: "#dc2626", HIGH: "#ef4444", MEDIUM: "#f59e0b", LOW: "#3b82f6", INFORMATIONAL: "#6b7280", INFO: "#6b7280" };
+
+  function topSeverity(findings) {
+    let best = null, rank = 0;
+    for (const f of findings) {
+      const r = SEV_RANK[(f.severity || "").toUpperCase()] || 0;
+      if (r > rank) { rank = r; best = (f.severity || "").toUpperCase(); }
+    }
+    return best;
+  }
+
+  function SecurityRenderer(params) {
+    if (params.node?.group) return null;
+    const fnd = params.data?.wiz;
+    if (!fnd || !fnd.length) return null;
+    const sev = params.data.wiz_severity || "INFORMATIONAL";
+    const color = SEV_COLOR[sev] || "#6b7280";
+    const el = document.createElement("button");
+    el.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:500;background:none;border:none;cursor:pointer;padding:0;color:inherit;";
+    el.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:${color};display:inline-block;"></span>${fnd.length}`;
+    el.title = `${fnd.length} Wiz issue(s) — click for details`;
+    el.onclick = (e) => { e.stopPropagation(); wizPopup = { name: params.data.resource_name || params.data.id, address: params.data.id, findings: fnd }; };
+    return el;
+  }
+
+  async function fetchWiz() {
+    wizScanning = true;
+    wizError = "";
+    try {
+      const res = await runWizScan();
+      if (res.error) wizError = res.error;
+      wizReportUrl = res.report_url || "";
+      const map = res.findings || {};
+      const updated = allRows.map((row) => {
+        const fnd = map[row.id] || map[`${row.resource_type}.${row.resource_name}`];
+        if (fnd && fnd.length) return { ...row, wiz: fnd, wiz_severity: topSeverity(fnd) };
+        return row.wiz ? { ...row, wiz: undefined, wiz_severity: undefined } : row;
+      });
+      allRows = updated;
+      applyFilters();
+      setCachedResources(updated);
+    } catch (e) {
+      wizError = e.message || String(e);
+    }
+    wizScanning = false;
+  }
+
   // --- Column Definitions ---
 
   const columnDefs = [
@@ -321,6 +377,7 @@
     { headerName: "Presence", field: "in_code", width: 80, cellRenderer: PresenceRenderer },
     { headerName: "Status", field: "status", width: 100, cellRenderer: StatusRenderer, filter: true },
     { headerName: "Action", field: "action", width: 100, cellRenderer: ActionRenderer, filter: true },
+    { headerName: "Security", field: "wiz_severity", width: 90, cellRenderer: SecurityRenderer, filter: true },
     { headerName: "Def", field: "tf_file", width: 130, cellRenderer: DefRenderer },
     { headerName: "AWS", field: "console_url", width: 70, cellRenderer: ConsoleUrlRenderer },
     { headerName: "ARN", field: "arn", flex: 2, minWidth: 120, cellRenderer: ArnRenderer, filter: "agTextColumnFilter" },
@@ -888,6 +945,21 @@
       </button>
 
       <div class="ms-auto flex items-center gap-2">
+        {#if wizScanning}
+          <span class="flex items-center gap-1.5 text-xs text-base-content/40">
+            <span class="loading loading-spinner loading-xs"></span>
+            Wiz scan...
+          </span>
+        {:else}
+          <button class="btn btn-text btn-xs" onclick={fetchWiz} title="Scan IaC for issues with Wiz CLI">
+            <span class="icon-[tabler--shield] size-3.5"></span>
+            Security
+          </button>
+        {/if}
+        {#if wizError}
+          <span class="text-xs text-error truncate max-w-[16rem]" title={wizError}>Wiz: {wizError}</span>
+        {/if}
+
         {#if cloudScanning}
           <span class="flex items-center gap-1.5 text-xs text-base-content/40">
             <span class="loading loading-spinner loading-xs"></span>
@@ -1412,6 +1484,49 @@
   </div>
 {/if}
 
+<!-- Wiz issues popup -->
+{#if wizPopup}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onclick={() => (wizPopup = null)}>
+    <div class="bg-base-100 w-[70vw] max-w-2xl max-h-[80vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onclick={(e) => e.stopPropagation()} use:modal={{ onclose: () => (wizPopup = null) }}>
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-base-content/10 bg-base-200/50">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="icon-[tabler--shield] size-4 text-primary"></span>
+          <span class="text-sm font-semibold truncate">Wiz issues: {wizPopup.name}</span>
+          <span class="text-[10px] text-base-content/40">{wizPopup.findings.length}</span>
+        </div>
+        <button class="btn btn-text btn-xs btn-square" onclick={() => (wizPopup = null)} aria-label="Close">
+          <span class="icon-[tabler--x] size-4"></span>
+        </button>
+      </div>
+      <div class="overflow-auto p-3 space-y-1.5">
+        {#each wizPopup.findings as f}
+          {@const sev = (f.severity || "INFORMATIONAL").toUpperCase()}
+          <a
+            href={f.url || wizReportUrl || "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-start gap-2 px-3 py-2 rounded-lg bg-base-200/60 hover:bg-base-200 transition-colors"
+          >
+            <span class="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style="background: {SEV_COLOR[sev] || '#6b7280'}"></span>
+            <div class="min-w-0 flex-1">
+              <div class="text-xs font-medium flex items-center gap-2">
+                <span class="truncate">{f.title}</span>
+                <span class="text-[9px] uppercase font-semibold shrink-0" style="color: {SEV_COLOR[sev] || '#6b7280'}">{sev}</span>
+              </div>
+              {#if f.file}
+                <div class="text-[10px] font-mono text-base-content/40">{f.file}{f.line ? `:${f.line}` : ""}</div>
+              {/if}
+            </div>
+            <span class="icon-[tabler--external-link] size-3.5 text-base-content/30 shrink-0 mt-0.5"></span>
+          </a>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   :global(.ag-watermark) {
     display: none !important;
@@ -1440,7 +1555,7 @@
     font-size: 10px;
     padding: 1px 4px;
     border-radius: 3px;
-    background: oklch(var(--bc) / 0.08);
+    background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
     font-family: ui-monospace, monospace;
   }
   :global(.diagnosis-md strong) {
