@@ -12,6 +12,7 @@
   import { marked } from "marked";
   import ConfirmModal from "./ConfirmModal.svelte";
   import DiffModal from "./DiffModal.svelte";
+  import { modal } from "../lib/modal.js";
 
   ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
@@ -976,7 +977,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onclick={() => { if (!actionRunning && !diagStreaming) { showOutput = false; } }}>
-        <div class="bg-base-100 w-[94vw] max-w-7xl h-[85vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onclick={(e) => e.stopPropagation()}>
+        <div class="bg-base-100 w-[94vw] max-w-7xl h-[85vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onclick={(e) => e.stopPropagation()} use:modal={{ onclose: () => { if (!actionRunning && !diagStreaming) showOutput = false; } }}>
         <div class="flex flex-1 overflow-hidden">
           {#if showOutput}
             <div class="flex flex-col flex-1 min-w-0 {showDiagnosis && diagMessages.length > 0 ? 'border-r border-base-content/10' : ''}">
@@ -1022,7 +1023,7 @@
                           class:text-warning={line.type === "warning"}
                           class:text-success={line.type === "success"}
                           class:text-info={line.type === "plan"}
-                          style={line.type === "normal" ? "color: oklch(var(--bc) / 0.8);" : ""}
+                          style={line.type === "normal" ? "color: color-mix(in oklch, var(--color-base-content) 80%, transparent);" : ""}
                         >{line.text}</td>
                       </tr>
                     {/each}
@@ -1225,7 +1226,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onclick={() => (detailOpen = false)}>
-    <div class="bg-base-100 w-[80vw] max-w-3xl max-h-[85vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onclick={(e) => e.stopPropagation()}>
+    <div class="bg-base-100 w-[80vw] max-w-3xl max-h-[85vh] rounded-xl shadow-2xl flex flex-col overflow-hidden" onclick={(e) => e.stopPropagation()} use:modal={{ onclose: () => (detailOpen = false) }}>
       <!-- Header -->
       <div class="flex items-center justify-between px-4 py-2.5 border-b border-base-content/10 bg-base-200/50">
         <div class="flex items-center gap-2">

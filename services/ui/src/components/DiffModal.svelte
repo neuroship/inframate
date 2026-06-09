@@ -1,4 +1,6 @@
 <script>
+  import { modal } from "../lib/modal.js";
+
   let { open = $bindable(false), filename = "", oldContent = "", newContent = "", ...rest } = $props();
 
   function computeDiff(oldText, newText) {
@@ -166,7 +168,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onclick={() => (open = false)}>
-    <div class="bg-base-100 w-[92vw] max-w-6xl h-[85vh] shadow-2xl rounded-lg flex flex-col" onclick={(e) => e.stopPropagation()}>
+    <div class="bg-base-100 w-[92vw] max-w-6xl h-[85vh] shadow-2xl rounded-lg flex flex-col" onclick={(e) => e.stopPropagation()} use:modal={{ onclose: () => (open = false) }}>
       <!-- Header -->
       <div class="flex items-center justify-between px-4 py-2.5 border-b border-base-content/10 shrink-0">
         <div class="flex items-center gap-2">

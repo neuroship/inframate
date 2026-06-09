@@ -404,6 +404,15 @@ class ResourcesApp(App):
 
         self._rebuild()
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # App-level bindings are mostly priority=True, which Textual still fires
+        # even while a ModalScreen is on top (the priority pass walks the full
+        # binding chain incl. the App). Disable them while the detail modal is
+        # open so keys act on the popup, not the screen underneath.
+        if self._detail_open:
+            return False
+        return True
+
     def _update_subtitle(self) -> None:
         parts = [f"{len(self.all_rows)} resources"]
         if self.credential_expiry and self.credential_expiry.get("expires_at"):
