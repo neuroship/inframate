@@ -55,54 +55,54 @@
       padding: "8px 0",
     },
     ".cm-gutters": {
-      borderRight: "1px solid oklch(var(--bc) / 0.1)",
-      backgroundColor: "oklch(var(--b2))",
-      color: "oklch(var(--bc) / 0.3)",
+      borderRight: "1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent)",
+      backgroundColor: "var(--color-base-200)",
+      color: "color-mix(in oklch, var(--color-base-content) 30%, transparent)",
       minWidth: "40px",
     },
     ".cm-activeLineGutter": {
-      backgroundColor: "oklch(var(--b3))",
-      color: "oklch(var(--bc) / 0.6)",
+      backgroundColor: "var(--color-base-300)",
+      color: "color-mix(in oklch, var(--color-base-content) 60%, transparent)",
     },
     ".cm-activeLine": {
-      backgroundColor: "oklch(var(--bc) / 0.04)",
+      backgroundColor: "color-mix(in oklch, var(--color-base-content) 4%, transparent)",
     },
     ".cm-selectionMatch": {
-      backgroundColor: "oklch(var(--p) / 0.15)",
+      backgroundColor: "color-mix(in oklch, var(--color-primary) 15%, transparent)",
     },
     "&.cm-focused .cm-matchingBracket": {
-      backgroundColor: "oklch(var(--p) / 0.2)",
-      outline: "1px solid oklch(var(--p) / 0.4)",
+      backgroundColor: "color-mix(in oklch, var(--color-primary) 20%, transparent)",
+      outline: "1px solid color-mix(in oklch, var(--color-primary) 40%, transparent)",
     },
     ".cm-cursor": {
-      borderLeftColor: "oklch(var(--bc))",
+      borderLeftColor: "var(--color-base-content)",
     },
     ".cm-foldGutter span": {
       fontSize: "10px",
       lineHeight: "1.4",
-      color: "oklch(var(--bc) / 0.3)",
+      color: "color-mix(in oklch, var(--color-base-content) 30%, transparent)",
     },
     ".cm-foldGutter span:hover": {
-      color: "oklch(var(--bc) / 0.7)",
+      color: "color-mix(in oklch, var(--color-base-content) 70%, transparent)",
     },
     ".cm-searchMatch": {
-      backgroundColor: "oklch(var(--wa) / 0.3)",
+      backgroundColor: "color-mix(in oklch, var(--color-warning) 30%, transparent)",
     },
     ".cm-searchMatch.cm-searchMatch-selected": {
-      backgroundColor: "oklch(var(--su) / 0.3)",
+      backgroundColor: "color-mix(in oklch, var(--color-success) 30%, transparent)",
     },
     ".cm-tooltip": {
-      backgroundColor: "oklch(var(--b2))",
-      border: "1px solid oklch(var(--bc) / 0.1)",
+      backgroundColor: "var(--color-base-200)",
+      border: "1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent)",
       borderRadius: "6px",
       boxShadow: "0 4px 12px oklch(0 0 0 / 0.15)",
     },
     ".cm-tooltip-autocomplete ul li[aria-selected]": {
-      backgroundColor: "oklch(var(--p) / 0.15)",
+      backgroundColor: "color-mix(in oklch, var(--color-primary) 15%, transparent)",
     },
     ".cm-panels": {
-      backgroundColor: "oklch(var(--b2))",
-      borderTop: "1px solid oklch(var(--bc) / 0.1)",
+      backgroundColor: "var(--color-base-200)",
+      borderTop: "1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent)",
     },
     ".cm-panels input, .cm-panels button": {
       fontSize: "12px",
@@ -119,11 +119,11 @@
     { tag: tags.blockComment, color: "oklch(0.55 0 0)", fontStyle: "italic" },
     { tag: tags.lineComment, color: "oklch(0.55 0 0)", fontStyle: "italic" },
     { tag: tags.propertyName, color: "oklch(0.7 0.12 220)" },
-    { tag: tags.variableName, color: "oklch(var(--bc))" },
+    { tag: tags.variableName, color: "var(--color-base-content)" },
     { tag: tags.function(tags.variableName), color: "oklch(0.72 0.15 80)" },
     { tag: tags.typeName, color: "oklch(0.68 0.14 190)" },
     { tag: tags.operator, color: "oklch(0.65 0.1 30)" },
-    { tag: tags.punctuation, color: "oklch(var(--bc) / 0.6)" },
+    { tag: tags.punctuation, color: "color-mix(in oklch, var(--color-base-content) 60%, transparent)" },
   ]);
 
   // Terraform keyword/function completions
@@ -465,12 +465,12 @@
     overflow: auto;
   }
   :global(.cm-highlight-line) {
-    background-color: oklch(var(--wa) / 0.25);
+    background-color: color-mix(in oklch, var(--color-warning) 25%, transparent);
     animation: highlight-fade 1.5s ease-out forwards;
   }
   @keyframes highlight-fade {
-    0% { background-color: oklch(var(--wa) / 0.35); }
-    50% { background-color: oklch(var(--wa) / 0.2); }
+    0% { background-color: color-mix(in oklch, var(--color-warning) 35%, transparent); }
+    50% { background-color: color-mix(in oklch, var(--color-warning) 20%, transparent); }
     100% { background-color: transparent; }
   }
 </style>

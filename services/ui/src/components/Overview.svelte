@@ -1503,7 +1503,7 @@
     font-size: 10px;
     padding: 1px 4px;
     border-radius: 3px;
-    background: oklch(var(--bc) / 0.08);
+    background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
     font-family: ui-monospace, monospace;
   }
   :global(.diagnosis-md strong) {
