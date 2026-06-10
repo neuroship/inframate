@@ -116,6 +116,11 @@ terraform:
   var_file: env/dev/terraform.tfvars         # used in plan, apply, destroy, import
   backend_config: env/dev/backend.hcl        # used in init
   data_dir: ./terraform-data/dev/.terraform  # sets TF_DATA_DIR for all commands
+
+# Wiz CLI IaC security scan (optional)
+wiz:
+  client_id: ...
+  client_secret: ...
 ```
 
 The `.inframate/` directory also stores plan cache and temporary plan files. You may want to add `.inframate/` to your `.gitignore`.
@@ -131,6 +136,12 @@ Provider defaults:
 | `deepseek` | `api.deepseek.com/v1` | `deepseek-chat` |
 
 Environment variables (`OPENAI_API_KEY`, `OPENAI_API_BASE`, `OPENAI_MODEL`) also work and take precedence over the config file.
+
+### Wiz IaC scan (optional)
+
+If the Wiz CLI (`wizcli`) is installed on your PATH and credentials are configured, the web UI can run an IaC security scan against your Terraform code. Issues are mapped onto matching resources in the table, with a severity badge per resource and a link back to the full Wiz report.
+
+Credentials are read from `wiz.client_id` / `wiz.client_secret` in the config file, or from the `WIZ_CLIENT_ID` / `WIZ_CLIENT_SECRET` environment variables (config file wins).
 
 ## Web UI
 

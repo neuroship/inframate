@@ -5,7 +5,7 @@
   import {
     streamOverviewFresh, getOverview, getCosts, streamTerraform, streamImport,
     streamCloudScan, streamChatSession, getFile, updateFile,
-    streamAwsDelete, checkAwsDeletePreconditions, runWizScan,
+    streamAwsDelete, checkAwsDeletePreconditions, streamWizScan,
   } from "../lib/api.js";
   import { lastActionError } from "../lib/stores.js";
   import { getCachedResources, setCachedResources, setCachedCosts, getCachedCosts, clearCache } from "../lib/cache.js";
@@ -59,6 +59,7 @@
 
   // Wiz security scan
   let wizScanning = $state(false);
+  let wizScanLabel = $state("");
   let wizError = $state("");
   let wizReportUrl = $state("");
   let wizPopup = $state(null); // { name, address, findings }
@@ -343,26 +344,42 @@
     return el;
   }
 
-  async function fetchWiz() {
+  function fetchWiz() {
     wizScanning = true;
+    wizScanLabel = "Starting Wiz scan...";
     wizError = "";
-    try {
-      const res = await runWizScan();
-      if (res.error) wizError = res.error;
-      wizReportUrl = res.report_url || "";
-      const map = res.findings || {};
-      const updated = allRows.map((row) => {
-        const fnd = map[row.id] || map[`${row.resource_type}.${row.resource_name}`];
-        if (fnd && fnd.length) return { ...row, wiz: fnd, wiz_severity: topSeverity(fnd) };
-        return row.wiz ? { ...row, wiz: undefined, wiz_severity: undefined } : row;
-      });
-      allRows = updated;
-      applyFilters();
-      setCachedResources(updated);
-    } catch (e) {
-      wizError = e.message || String(e);
-    }
-    wizScanning = false;
+
+    streamWizScan(
+      (raw) => {
+        let msg;
+        try {
+          msg = JSON.parse(raw);
+        } catch (_) {
+          if (raw.startsWith("Error")) wizError = raw;
+          return;
+        }
+        if (msg.type === "phase") {
+          wizScanLabel = msg.message;
+        } else if (msg.type === "result") {
+          const res = msg.data || {};
+          if (res.error) wizError = res.error;
+          wizReportUrl = res.report_url || "";
+          const map = res.findings || {};
+          const updated = allRows.map((row) => {
+            const fnd = map[row.id] || map[`${row.resource_type}.${row.resource_name}`];
+            if (fnd && fnd.length) return { ...row, wiz: fnd, wiz_severity: topSeverity(fnd) };
+            return row.wiz ? { ...row, wiz: undefined, wiz_severity: undefined } : row;
+          });
+          allRows = updated;
+          applyFilters();
+          setCachedResources(updated);
+        }
+      },
+      () => {
+        wizScanning = false;
+        wizScanLabel = "";
+      }
+    );
   }
 
   // --- Column Definitions ---
@@ -948,7 +965,7 @@
         {#if wizScanning}
           <span class="flex items-center gap-1.5 text-xs text-base-content/40">
             <span class="loading loading-spinner loading-xs"></span>
-            Wiz scan...
+            {wizScanLabel || "Wiz scan..."}
           </span>
         {:else}
           <button class="btn btn-text btn-xs" onclick={fetchWiz} title="Scan IaC for issues with Wiz CLI">

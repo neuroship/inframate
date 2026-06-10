@@ -234,18 +234,29 @@ def map_findings_to_resources(
     return mapped
 
 
-async def run_scan(
+async def run_scan_events(
     project_dir: str, client_id: str, client_secret: str, rows: list[dict]
-) -> dict:
-    """Authenticate, scan, and return findings mapped to resources."""
+):
+    """Authenticate and scan, yielding progress events; the final event carries
+    the findings mapped to resources: {"type": "result", "data": {...}}."""
     if not wiz_available():
-        return {
-            "installed": False,
-            "error": "wizcli is not installed. See https://www.wiz.io/lp/wiz-cli",
-            "findings": {},
+        yield {
+            "type": "result",
+            "data": {
+                "installed": False,
+                "error": "wizcli is not installed. See https://www.wiz.io/lp/wiz-cli",
+                "findings": {},
+            },
         }
+        return
+    yield {"type": "phase", "message": "Authenticating with Wiz..."}
     await authenticate(client_id, client_secret)
+    yield {
+        "type": "phase",
+        "message": "Running Wiz IaC scan (this can take a minute)...",
+    }
     data = await _iac_scan(project_dir)
+    yield {"type": "phase", "message": "Mapping findings to resources..."}
     report_url, findings = parse_findings(data)
     mapped = map_findings_to_resources(findings, rows)
 
@@ -254,11 +265,14 @@ async def run_scan(
         sev = f.get("severity", "INFORMATIONAL")
         counts[sev] = counts.get(sev, 0) + 1
 
-    return {
-        "installed": True,
-        "error": None,
-        "report_url": report_url,
-        "findings": mapped,
-        "total": len(findings),
-        "counts": counts,
+    yield {
+        "type": "result",
+        "data": {
+            "installed": True,
+            "error": None,
+            "report_url": report_url,
+            "findings": mapped,
+            "total": len(findings),
+            "counts": counts,
+        },
     }

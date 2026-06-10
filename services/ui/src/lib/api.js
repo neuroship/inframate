@@ -32,8 +32,8 @@ export async function getWizStatus() {
   return request(`/wiz/status`);
 }
 
-export async function runWizScan() {
-  return request(`/wiz/scan`);
+export function streamWizScan(onMessage, onDone) {
+  return streamSSE(`${BASE}/wiz/scan`, "GET", null, onMessage, onDone);
 }
 
 export function streamCloudScan(onMessage, onDone) {
